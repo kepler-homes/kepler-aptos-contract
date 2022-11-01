@@ -1,84 +1,77 @@
-module kepler::passport_mine_011 {
+module kepler::passport_mine_006 {
     use std::vector;
     use std::signer;
-    use std::string::{Self,String};
-    use std::error;
-    use std::ed25519::{Self,ValidatedPublicKey};
-    use aptos_std::table::{Self,Table};
-    use aptos_std::type_info::{Self,TypeInfo};
+    use std::string;
+    use std::math64;
+    use std::ed25519;
+    use aptos_std::table;
+    use aptos_std::type_info;
     use aptos_framework::account;
     use aptos_framework::coin;
-    use aptos_framework::resource_account;
-    use aptos_framework::event::{Self,EventHandle};
     use aptos_framework::timestamp;
     use aptos_framework::util;
-    use aptos_token::token::{Self,Token,TokenDataId,TokenId,deposit_token,withdraw_token,merge,split};
+    use aptos_token::token ;
 
+    const EMPTY_ADDRESS                                 :address = @0x0000000000000000000000000000000000000000000000000000000000000000;
+    const MAX_BUY_COUNT                                 :u64 = 4;
+    const COMMISSION_RATE                               :u64 = 5;
 
-    const ENOT_ADMIN                                    :u64 = 0x1001;
-    const ENOT_DEPLOYER                                 :u64 = 0x1002;
-    const ECOIN_NOT_IN_WHITELIST                        :u64 = 0x1003;
-    const EINVALID_SIGNATURE                            :u64 = 0x1004;
-    const ECOLLECTION_NOT_CREATED                       :u64 = 0x1005;
-    const EINVALID_COLLECTION_OWNER                     :u64 = 0x1006;
-    const EINVALID_VECTOR_LENGTH                        :u64 = 0x1007;
-    const EFREN_NOT_FOUND                               :u64 = 0x1008;
-    const EFRENS_NOT_AVAILABLE                          :u64 = 0x1009;
-    const EINVALID_BALANCE                              :u64 = 0x1010;
-    const EALREADY_INITIALIZED                          :u64 = 0x1011;
-    const ENOT_INITIALIZED                              :u64 = 0x1012;
-    const EKEPLER_PASSPORT_PUBLIC_SALE_NOT_CONFIGURED   :u64 = 0x1013;
-    const EKEPLER_PASSPORT_PROMOTION_SALE_NOT_CONFIGURED:u64 = 0x1014;
-    const EUNIVERSE_PASSPORT_SALE_NOT_CONFIGURED        :u64 = 0x1015;
-    const EINVALID_U64_BYTE_LENGTH                      :u64 = 0x1016;
+    const ENOT_DEPLOYER                                 :u64 = 0x1000;
+    const EINVALID_SIGNATURE                            :u64 = 0x1001;
+    const ECOLLECTION_NOT_CREATED                       :u64 = 0x1002;
+    const EALREADY_INITIALIZED                          :u64 = 0x1003;
+    const ENOT_INITIALIZED                              :u64 = 0x1004;
+    const EINVALID_U64_BYTE_LENGTH                      :u64 = 0x1005;
+    const EINVALID_PARAMETERS                           :u64 = 0x1006;
+    const EEXCEED_MAX_BUY_AMOUNT                        :u64 = 0x1007;
+    const EEXCEED_SALE_SUPPLY                           :u64 = 0x1008;
 
-    struct GlobalStorage has key{
+    struct ModuleStorage has key{
         resource_accounts: table::Table<vector<u8>,address>,
-        signature_signer: vector<u8>,
-        currency: TypeInfo,
-    }  
+        signature_pubkey: vector<u8>,
+        currency:  type_info::TypeInfo,
+        vault: address,
+    }
+
+    struct CollectionConfig has key {
+        name: vector<u8>,
+        description: vector<u8>,
+        uri: vector<u8>,
+        resource_signer_cap: account::SignerCapability,
+        reference_records: table::Table<address,vector<ReferenceRecord>>,
+        next_token_id: u64,
+    }
 
     struct UserStorage has key, store{
-        reference_records: vector<ReferenceRecord>,
         buy_records: vector<BuyRecord>,
     }
 
-    struct KeplerToken has store {
-        name: vector<u8>,
-        description: vector<u8>,
-        token_data: token::TokenDataId
-
-    }
-
-    struct KeplerCollection has key {
-        name: vector<u8>,
-        description: vector<u8>,
-        tokens: vector<KeplerToken>,
-        owner: address,
-        resource_signer_cap: account::SignerCapability
-    }
-
-    struct KeplerPassportPublicSaleStorage has key{
+    struct BuyRecord has store{
         collection_name: vector<u8>,
-        price: u64,
-        max_supply:u64,
-        sale_amount:u64,
-    }
+        buy_amount: u64,
+        total_pay: u64,
+        buy_time: u64,
+    }    
 
-    struct KeplerPassportPromotionSaleStorage has key{
+
+    struct KeplerPassportConfig has key{
         collection_name: vector<u8>,
-        stage1_supply: u64,
-        stage1_price: u64,
-        stage2_supply: u64,
-        stage2_price: u64,
-        sale_amount: u64,
+        public_price: u64,
+        public_total_supply:u64,
+        public_sale_amount:u64,
+ 
+        promotion_stage1_supply: u64,
+        promotion_stage1_price: u64,
+        promotion_stage2_supply: u64,
+        promotion_stage2_price: u64,
+        promotion_sale_amount: u64,
     }
 
-    struct UniversePassportSaleStorage has key{
+    struct UniversePassportConfig has key{
         collection_name: vector<u8>,
         public_price: u64,
         promotion_price: u64,
-        max_supply:u64,
+        total_supply:u64,
         sale_amount:u64,
     }
 
@@ -86,121 +79,285 @@ module kepler::passport_mine_011 {
         buyer: address,
         collection_name: vector<u8>,
         buy_amount: u64,
-        price: u64,
+        total_pay: u64,
         reward: u64,
         buy_time: u64,
     }
 
-    struct BuyRecord has store{
-        collection_name: vector<u8>,
-        buy_amount: u64,
-        price: u64,
-        buy_time: u64,
-    }
-
-    public entry fun initialize<CoinType>(deployer:&signer,signature_signer:vector<u8>,) {
+    public entry fun initialize<CoinType>(deployer:&signer, signature_pubkey: vector<u8>, vault: address) {
         let addr = signer::address_of(deployer);
         assert!(addr==@kepler, ENOT_DEPLOYER);
-        assert!(!exists<GlobalStorage>(addr), EALREADY_INITIALIZED);
-        move_to(deployer, GlobalStorage{
+        assert!(!exists<ModuleStorage>(addr), EALREADY_INITIALIZED);
+        move_to(deployer, ModuleStorage{
             resource_accounts: table::new(),
             currency: type_info::type_of<CoinType>(),
-            signature_signer: signature_signer,
+            signature_pubkey: signature_pubkey,
+            vault
         });
     }
 
-    public entry fun configure_kepler_passport_public_sale (
-        deployer:&signer,
-        collection_name: vector<u8>,
-        price: u64,
-        max_supply:u64
-    ) acquires KeplerPassportPublicSaleStorage {
+    public entry fun create_collection(
+        deployer: &signer,
+        name: vector<u8>,
+        description: vector<u8>,
+        uri: vector<u8>,
+        seed: vector<u8>,
+    ) acquires ModuleStorage {
         let addr = signer::address_of(deployer);
         assert!(addr==@kepler, ENOT_DEPLOYER);
-        if (exists<KeplerPassportPublicSaleStorage>(addr)) {
-            let storage =  borrow_global_mut<KeplerPassportPublicSaleStorage>(addr);
-            storage.collection_name = collection_name;
-            storage.price = price;
-            storage.max_supply = max_supply;
-        }else {
-            move_to(deployer, KeplerPassportPublicSaleStorage{collection_name,price,max_supply,sale_amount:0});
-        }
+        assert!(exists<ModuleStorage>(addr), ENOT_INITIALIZED);
+        let global = borrow_global_mut<ModuleStorage>(addr);
+        // creating a resource account which would create collection and mint tokens
+        let (resource,resource_signer_cap) = account::create_resource_account(deployer, seed);
+        let collection = CollectionConfig {
+            name,
+            description,
+            uri,
+            resource_signer_cap,
+            reference_records:table::new(),
+            next_token_id: 1,
+        };
+
+        move_to(&resource,collection);
+        token::create_collection(
+            &resource,// signer
+            string::utf8(name),// Name
+            string::utf8(description),// Description
+            string::utf8(uri),// URI
+            0,// Maximum NFTs
+            vector<bool>[false,false,false] // Mutable Config
+        );
+        table::add(&mut global.resource_accounts,name,signer::address_of(&resource));
     }
 
-    public entry fun configure_kepler_passport_promotion_sale (
-        deployer:&signer,
-        collection_name: vector<u8>,
-        stage1_supply: u64,
-        stage1_price: u64,
-        stage2_supply: u64,
-        stage2_price: u64,
-    ) acquires KeplerPassportPromotionSaleStorage {
-        let addr = signer::address_of(deployer);
-        assert!(addr==@kepler, ENOT_DEPLOYER);
-        if (exists<KeplerPassportPromotionSaleStorage>(addr)) {
-            let storage =  borrow_global_mut<KeplerPassportPromotionSaleStorage>(addr);
-            storage.collection_name = collection_name;
-            storage.stage1_supply = stage1_supply;
-            storage.stage1_price = stage1_price;
-            storage.stage2_supply = stage2_supply;
-            storage.stage2_price = stage2_price;
-        }else {
-            move_to(deployer, KeplerPassportPromotionSaleStorage{
-                collection_name,
-                stage1_supply,
-                stage1_price,
-                stage2_supply,
-                stage2_price,
-                sale_amount:0
-            });
-        }
-    }
-
-    public entry fun configure_promotion_passport_sale (
-        deployer:&signer,
-        collection_name: vector<u8>,
-        public_price: u64,
-        promotion_price: u64,
-        max_supply:u64,
-    ) acquires UniversePassportSaleStorage {
-        let addr = signer::address_of(deployer);
-        assert!(addr==@kepler, ENOT_DEPLOYER);
-        if (exists<UniversePassportSaleStorage>(addr)) {
-            let storage =  borrow_global_mut<UniversePassportSaleStorage>(addr);
-            storage.collection_name = collection_name;
-            storage.public_price = public_price;
-            storage.promotion_price = promotion_price;
-            storage.max_supply = max_supply;
-        }else {
-            move_to(deployer, UniversePassportSaleStorage{
-                collection_name,
-                public_price,
-                promotion_price,
-                max_supply,
-                sale_amount:0
-            });
-        }
-    }
 
     public entry fun buy_kepler_passport<CoinType>(
         buyer: &signer,
+        buyer_addr: vector<u8>,
         amount: vector<u8>,
         is_promotional: vector<u8>,
         referrer: vector<u8>,
         signature: vector<u8>,
-    ) acquires GlobalStorage{
-        assert!(exists<GlobalStorage>(@kepler), ENOT_INITIALIZED);
-        let global = borrow_global<GlobalStorage>(@kepler);
+    ) acquires ModuleStorage, UserStorage, CollectionConfig, KeplerPassportConfig
+    {
+        assert!(util::address_from_bytes(buyer_addr)== signer::address_of(buyer), EINVALID_PARAMETERS);
+        assert!(exists<ModuleStorage>(@kepler), ENOT_INITIALIZED);
+        let global = borrow_global<ModuleStorage>(@kepler);
+        verify_buy_signature(buyer_addr, amount,is_promotional,referrer,signature,global.signature_pubkey);
+        let amount = vector_to_u64(&amount);
+        let is_promotional = vector_to_u64(&is_promotional);
+        let referrer = util::address_from_bytes(referrer);
+        let config = borrow_global_mut<KeplerPassportConfig>(@kepler);
+        let (total_supply,sale_amount,total_pay) = get_kepler_parameters(config,is_promotional,amount);
+
+        buy_passport<CoinType>(buyer,amount,referrer,config.collection_name,total_supply,sale_amount,total_pay); 
+        
+        if(is_promotional==1){
+            number_add(&mut config.promotion_sale_amount,amount);
+        }else {
+            number_add(&mut config.public_sale_amount,amount);
+        };
+    }
+
+        public entry fun buy_universe_passport<CoinType>(
+            buyer: &signer,
+            buyer_addr: vector<u8>,
+            amount: vector<u8>,
+            is_promotional: vector<u8>,
+            referrer: vector<u8>,
+            signature: vector<u8>,
+        ) acquires ModuleStorage, UserStorage, CollectionConfig, UniversePassportConfig
+    {
+        assert!(util::address_from_bytes(buyer_addr)== signer::address_of(buyer), EINVALID_PARAMETERS);
+        assert!(exists<ModuleStorage>(@kepler), ENOT_INITIALIZED);
+        let global = borrow_global<ModuleStorage>(@kepler);
+        verify_buy_signature(buyer_addr, amount,is_promotional,referrer,signature,global.signature_pubkey);
+        let amount = vector_to_u64(&amount);
+        let is_promotional = vector_to_u64(&is_promotional);
+        let referrer = util::address_from_bytes(referrer);
+        let config = borrow_global_mut<UniversePassportConfig>(@kepler);
+        let (total_supply,sale_amount,total_pay) = get_universe_parameters(config,is_promotional,amount);
+        buy_passport<CoinType>(buyer,amount,referrer,config.collection_name,total_supply,sale_amount,total_pay);
+        number_add(&mut config.sale_amount,amount);
+    }
+
+    fun buy_passport<CoinType>(
+        buyer: &signer,
+        amount: u64,
+        referrer: address,
+        collection_name: vector<u8>,
+        total_supply: u64,
+        sale_amount:   u64,
+        total_pay:u64
+    ) acquires ModuleStorage, UserStorage, CollectionConfig
+    {
+        let addr = signer::address_of(buyer);
+        let global = borrow_global<ModuleStorage>(@kepler);
+        assert!(amount>0, EINVALID_PARAMETERS);
+        if(!exists<UserStorage>(addr)){
+            move_to(buyer,UserStorage {buy_records: vector::empty<BuyRecord>()});
+        };
+        let user_storage = borrow_global_mut<UserStorage>(addr);
+        assert!(amount + vector::length(&user_storage.buy_records)<=MAX_BUY_COUNT, EEXCEED_MAX_BUY_AMOUNT);
+        assert!(amount + sale_amount <= total_supply, EEXCEED_SALE_SUPPLY);
+        assert!(table::contains(&global.resource_accounts, collection_name), ECOLLECTION_NOT_CREATED);
+        let collection_resource = *table::borrow(&global.resource_accounts, collection_name);
+        
+        assert!(exists<CollectionConfig>(collection_resource),ECOLLECTION_NOT_CREATED);
+        let collection  = borrow_global_mut<CollectionConfig>(collection_resource);
+        
+        //mint nft to buyer
+        mint_token_to(buyer,collection);
+        
+        // transfer coin to valut and referrer
+        let reward= if(referrer == EMPTY_ADDRESS) {0} else {total_pay*COMMISSION_RATE/100};
+        coin::transfer<CoinType>(buyer,global.vault,total_pay-reward);
+        
+        if(reward>0){
+            coin::transfer<CoinType>(buyer,referrer, reward);
+        };
+
+        // add buy records
+        vector::push_back(&mut user_storage.buy_records,BuyRecord{
+            collection_name,
+            buy_amount: amount,
+            total_pay,
+            buy_time: timestamp::now_seconds(),
+        });
+
+        // add reference records
+        if(!table::contains(&collection.reference_records, referrer)){
+            table::add(&mut collection.reference_records,referrer, vector::empty<ReferenceRecord>());
+        };
+        let reference_records = table::borrow_mut(&mut collection.reference_records, referrer);
+        vector::push_back(reference_records , ReferenceRecord{
+            buyer: addr,
+            collection_name,
+            buy_amount: amount,
+            total_pay,
+            reward ,
+            buy_time: timestamp::now_seconds(),
+        });
+    }
+
+
+    fun get_kepler_parameters(storage: &KeplerPassportConfig, is_promotional: u64, amount :u64) : (u64,u64,u64) {
+            if(is_promotional==1){
+            let total_supply = storage.promotion_stage1_supply + storage.promotion_stage2_supply;
+            let i = 0;
+            let total_pay = 0;
+            let sale_amount = storage.promotion_sale_amount;
+            while (i < amount) {
+                let price = if(sale_amount+i <= storage.promotion_stage1_supply) {storage.promotion_stage1_price} else {storage.promotion_stage2_price};
+                total_pay = total_pay + price;
+                i = i + 1;
+            };
+            (total_supply,sale_amount,total_pay)
+        }else {
+            let total_supply = storage.public_total_supply;
+            let total_pay = amount * storage.public_price;
+            let sale_amount = storage.public_sale_amount;
+            (total_supply,sale_amount,total_pay)
+        }
+    }
+
+    fun get_universe_parameters(storage: &UniversePassportConfig,is_promotional: u64, amount :u64) : (u64,u64,u64) {
+        let price = if(is_promotional==1) {storage.promotion_price} else {storage.public_price};
+        (storage.total_supply,storage.sale_amount, amount* price)
+    }
+
+    fun verify_buy_signature(
+        buyer_addr: vector<u8>,
+        amount: vector<u8>,
+        is_promotional: vector<u8>,
+        referrer: vector<u8>,
+        signature: vector<u8>,
+        signature_pubkey: vector<u8>,
+    ) {
         let message = vector::empty<u8>();
+        vector::append(&mut message,buyer_addr);
         vector::append(&mut message,amount);
         vector::append(&mut message,is_promotional);
         vector::append(&mut message,referrer);
         let signature = ed25519::new_signature_from_bytes(signature);
-        let pubkey = ed25519::new_unvalidated_public_key_from_bytes(global.signature_signer);
+        let pubkey = ed25519::new_unvalidated_public_key_from_bytes(signature_pubkey);
         let verified = ed25519::signature_verify_strict(&signature,&pubkey,message);
         assert!(verified,EINVALID_SIGNATURE);
     }
 
+    public entry fun verify_signature(_user:&signer,order_id: vector<u8>,amount: vector<u8>,pubkey: vector<u8>,signature: vector<u8>){
+        let message = vector::empty<u8>();
+        vector::append(&mut message,order_id);
+        vector::append(&mut message,amount);
+        let signature = ed25519::new_signature_from_bytes(signature);
+        let pubkey = ed25519::new_unvalidated_public_key_from_bytes(pubkey);
+        let verified = ed25519::signature_verify_strict(&signature,&pubkey,message);
+        assert!(verified,EINVALID_SIGNATURE);
+    }
+
+    public entry fun configure_kepler_passport (
+        deployer:&signer,
+        collection_name: vector<u8>,
+        public_price: u64,
+        public_total_supply:u64,
+        promotion_stage1_supply: u64,
+        promotion_stage1_price: u64,
+        promotion_stage2_supply: u64,
+        promotion_stage2_price: u64,
+    ) acquires KeplerPassportConfig {
+        let addr = signer::address_of(deployer);
+        assert!(addr==@kepler, ENOT_DEPLOYER);
+        if (exists<KeplerPassportConfig>(addr)) {
+            let storage =  borrow_global_mut<KeplerPassportConfig>(addr);
+            storage.collection_name = collection_name;
+            storage.public_price = public_price;
+            storage.public_total_supply = public_total_supply;
+            storage.promotion_stage1_supply = promotion_stage1_supply;
+            storage.promotion_stage1_price = promotion_stage1_price;
+            storage.promotion_stage2_supply = promotion_stage2_supply;
+            storage.promotion_stage2_price = promotion_stage2_price;
+
+        }else {
+            move_to(deployer, KeplerPassportConfig{
+                collection_name,
+                public_price,
+                public_total_supply,
+                public_sale_amount:0,
+                promotion_stage1_supply,
+                promotion_stage1_price,
+                promotion_stage2_supply,
+                promotion_stage2_price,
+                promotion_sale_amount:0
+            });
+        }
+    }
+
+    public entry fun configure_uinverse_passport (
+        deployer:&signer,
+        collection_name: vector<u8>,
+        public_price: u64,
+        promotion_price: u64,
+        total_supply:u64,
+    ) acquires UniversePassportConfig {
+        let addr = signer::address_of(deployer);
+        assert!(addr==@kepler, ENOT_DEPLOYER);
+        if (exists<UniversePassportConfig>(addr)) {
+            let storage =  borrow_global_mut<UniversePassportConfig>(addr);
+            storage.collection_name = collection_name;
+            storage.public_price = public_price;
+            storage.promotion_price = promotion_price;
+            storage.total_supply = total_supply;
+        }else {
+            move_to(deployer, UniversePassportConfig{
+                collection_name,
+                public_price,
+                promotion_price,
+                total_supply,
+                sale_amount:0
+            });
+        }
+    }
+    
     fun vector_to_u64(v: &vector<u8>): u64{
         let length=vector::length(v);
         assert!(length==8,EINVALID_U64_BYTE_LENGTH);
@@ -213,134 +370,84 @@ module kepler::passport_mine_011 {
         value
     }
 
-    public entry fun buy_universe_passport(){}
+    fun mint_token_to(buyer: &signer,collection: &mut CollectionConfig) {
+        let token_id= u64_to_raw_string(collection.next_token_id,4);
+        number_add(&mut collection.next_token_id,1);
+        
+        let name = vector::empty<u8>();
+        vector::append(&mut name, collection.name);
+        vector::append(&mut name, b"# ");
+        vector::append(&mut name, token_id);
+        
+        let description= name;
 
+        let uri = vector::empty<u8>();
+        //https://storage.googleapis.com/keplernft/passport/kepler/K0001.png
+        vector::append(&mut uri, b"https://storage.googleapis.com/keplernft/passport/kepler/K");
+        vector::append(&mut uri, token_id);
+        vector::append(&mut uri, b".png");
 
-    public entry fun create_collection(
-        collection_owner: &signer,
-        name: vector<u8>,
-        description: vector<u8>,
-        uri: vector<u8>
-    ) acquires GlobalStorage {
-        let addr = signer::address_of(collection_owner);
-        assert!(exists<GlobalStorage>(addr), ENOT_INITIALIZED);
-        let global = borrow_global_mut<GlobalStorage>(addr);
-
-        let collection_owner_addr = signer::address_of(collection_owner);
-
-        // creating a resource account which would create collection and mint tokens
-        let (resource,resource_signer_cap) = account::create_resource_account(collection_owner, name);
-        let collection = KeplerCollection {
-            name,
-            description,
-            tokens: vector::empty<KeplerToken>(),
-            owner: collection_owner_addr,
-            resource_signer_cap
-        };
-
-        move_to(&resource,collection);
-        // create a collection with the venue name and resource account as the creator
-        token::create_collection(
-            &resource,// signer
-            string::utf8(name),// Name
-            string::utf8(description),// Description
-            string::utf8(uri),// URI
-            0,// Maximum NFTs
-            vector<bool>[false,false,false] // Mutable Config
-        );
-        table::add(&mut global.resource_accounts, name,signer::address_of(&resource));
+        let resource_signer = account::create_signer_with_capability(&collection.resource_signer_cap);
+        let token_data_id = create_token_data_id(&resource_signer,collection.name,name,description,uri);
+        // the buyer should opt in direct transfer for the NFT to be minted
+        token::opt_in_direct_transfer(buyer,true);
+        // Mint the NFT to the buyer account
+        let buyer_addr = signer::address_of(buyer);
+        token::mint_token_to(&resource_signer,buyer_addr, token_data_id, 1);
     }
 
-     public entry fun create_tokendata (
-        collection_owner: &signer,
-        collection_name: vector<u8>,
+     fun create_token_data_id(
+        resource_signer :&signer,
+        collection_name:vector<u8>,
         name: vector<u8>,
         description: vector<u8>,
-        uri: vector<u8>
-    ) acquires KeplerCollection,GlobalStorage {
-        assert!(exists<GlobalStorage>(@kepler), ENOT_INITIALIZED);
-
-        let global = borrow_global<GlobalStorage>(@kepler);
-
-        let venue_resource = *table::borrow(&global.resource_accounts, collection_name );
-
-        assert!(exists<KeplerCollection>(venue_resource),ECOLLECTION_NOT_CREATED);
-        
-        let collection_owner_addr = signer::address_of(collection_owner);
-        let collection_info = borrow_global_mut<KeplerCollection>(venue_resource);
-        
-        assert!(collection_info.owner == collection_owner_addr,EINVALID_COLLECTION_OWNER);
-
-        let collection_resource_signer = account::create_signer_with_capability(&collection_info.resource_signer_cap);
-
-        // Creating a token data for this particular type of fren which would be used to mint NFTs
+        uri: vector<u8>,) : token::TokenDataId {
         let token_mutability = token::create_token_mutability_config(&vector<bool>[false,false,false,false,false]);
-
-        let token_data = token::create_tokendata(
-            &collection_resource_signer,
-            string::utf8(collection_info.name),// Collection Name
+        token::create_tokendata(
+            resource_signer,
+            string::utf8(collection_name),// Collection Name
             string::utf8(name),// Token Name
             string::utf8(description),// Token description
             1,//maximum,
             string::utf8(uri),
-            collection_info.owner,// royalty payee address
+            @kepler,// royalty payee address
             100, //royalty_points_denominator
             5, //royalty_points_numerator
             token_mutability,//token_mutate_config
             vector<string::String>[], //property_keys
             vector<vector<u8>>[], //property_values
             vector<string::String>[] //property_types
-        );
-        let token = KeplerToken {name,description,token_data};
-        vector::push_back(&mut collection_info.tokens,token);
+        )
     }
 
+    fun number_add(number: &mut u64, value: u64){
+        *number = *number + value;
+    }
 
-    public entry fun mint_token<CoinType>(
-        buyer: &signer,
-        collection_name: vector<u8>,
-        name: vector<u8>
-    ) acquires KeplerCollection,GlobalStorage {
-        assert!(exists<GlobalStorage>(@kepler), ENOT_INITIALIZED);
-        let global = borrow_global<GlobalStorage>(@kepler);
-        let venue_resource = *table::borrow(&global.resource_accounts, collection_name );
-        assert!(exists<KeplerCollection >(venue_resource),ECOLLECTION_NOT_CREATED);
+    fun number_mul(number: &mut u64, value: u64){
+        *number = *number * value;
+    }
 
-        let collection_info = borrow_global_mut<KeplerCollection>(venue_resource);
-        let token_count = vector::length(&collection_info.tokens);
-        let i = 0;
-        while (i < token_count) {
-            let current = vector::borrow<KeplerToken>(&collection_info.tokens,i);
-            if (current.name == name) {
-                break
-            };
-            i = i +1;
+    fun number_div(number: &mut u64, value: u64){
+        *number = *number / value;
+    }
+
+    fun number_sub(number: &mut u64, value: u64){
+        *number = *number - value;
+    }
+
+    fun number_set(number: &mut u64, value: u64){
+        *number = value;
+    }
+
+    fun u64_to_raw_string(token_id: u64, length:u64) :vector<u8> {
+        let v = vector::empty<u8>();
+        let i:u64 = 0;
+        while (i < length) {
+            let char = 48 + token_id%math64::pow(10,length-i)/math64::pow(10,length-i-1);
+            vector::push_back(&mut v,(char as u8));
+            i = i+1 ;
         };
-
-        assert!(i != token_count, EFREN_NOT_FOUND);
-        let kepler_token = vector::borrow_mut<KeplerToken>(&mut collection_info.tokens,i);
-
-        let price =20;
-        coin::transfer<CoinType>(buyer,collection_info.owner,price);
-
-        let collection_resource_signer = account::create_signer_with_capability(&collection_info.resource_signer_cap);
-        let buyer_addr = signer::address_of(buyer);
-
-        // the buyer should opt in direct transfer for the NFT to be minted
-        token::opt_in_direct_transfer(buyer,true);
-        // Mint the NFT to the buyer account
-        token::mint_token_to(&collection_resource_signer,buyer_addr,kepler_token.token_data, 1);
+        v
     }
-
-
-    public entry fun verify_signature(_user:&signer,order_id: vector<u8>,amount: vector<u8>,pubkey: vector<u8>,signature: vector<u8>){
-        let message = vector::empty<u8>();
-        vector::append(&mut message,order_id);
-        vector::append(&mut message,amount);
-        let signature = ed25519::new_signature_from_bytes(signature);
-        let pubkey = ed25519::new_unvalidated_public_key_from_bytes(pubkey);
-        let verified = ed25519::signature_verify_strict(&signature,&pubkey,message);
-        assert!(verified,EINVALID_SIGNATURE);
-    }
-
 }

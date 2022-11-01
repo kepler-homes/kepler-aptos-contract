@@ -4,26 +4,35 @@ import { BaseClient } from "./client";
 import * as ed from "@noble/ed25519";
 const UNIT = 1e6;
 
+let moduleName = "passport_mine_006";
+
 class Client extends BaseClient {
     coinType: string;
     signatureSigner: AptosAccount;
-    constructor(deployer: AptosAccount, signatureSigner: AptosAccount, coinType: string) {
-        super(deployer, "passport_mine_011");
+    vault: string;
+    constructor(deployer: AptosAccount, signatureSigner: AptosAccount, vault: string, coinType: string) {
+        super(deployer, moduleName);
         this.coinType = coinType;
         this.signatureSigner = signatureSigner;
+        this.vault = vault;
     }
 
-    async configureKeplerPassportPublicSale(collectionName: string, price: number, maxSupply: number) {
+    async configureKeplerPassport(collectionName: string, force = false) {
+        if (!force && (await this.queryKeplerPassportConfig())) return;
         let args = {
             collectionName: Uint8Array.from(Buffer.from(collectionName, "utf-8")),
-            price,
-            maxSupply,
+            publicPrice: 1.4 * UNIT,
+            publicMaxSupply: 100,
+            promotionStage1Supply: 1000,
+            promotionStage1Price: 1.2 * UNIT,
+            promotionStage2Supply: 3000,
+            promotionStage2Price: 1.3 * UNIT,
         };
         await this.submitAndConfirmPayload(
             this.deployer,
             {
                 type: "script_function_payload",
-                function: `${this.moduleType}::configure_kepler_passport_public_sale`,
+                function: `${this.moduleType}::configure_kepler_passport`,
                 type_arguments: [],
                 arguments: Object.values(args),
             },
@@ -31,49 +40,20 @@ class Client extends BaseClient {
         );
     }
 
-    async configureKeplerPassportPromotionSale(
-        collectionName: string,
-        stage1Supply: number,
-        stage1Price: number,
-        stage2Supply: number,
-        stage2Price: number
-    ) {
+    async configureUniversePassport(collectionName: string, force = false) {
+        if (!force && (await this.queryUniversePassportConfig())) return;
         let args = {
             collectionName: Uint8Array.from(Buffer.from(collectionName, "utf-8")),
-            stage1Supply,
-            stage1Price,
-            stage2Supply,
-            stage2Price,
+            publicPrice: 3.6 * UNIT,
+            promotionPrice: 3.3 * UNIT,
+            maxSupply: 1000,
         };
-        await this.submitAndConfirmPayload(
-            this.deployer,
-            {
-                type: "script_function_payload",
-                function: `${this.moduleType}::configure_kepler_passport_promotion_sale`,
-                type_arguments: [],
-                arguments: Object.values(args),
-            },
-            true
-        );
-    }
 
-    async configurePromotionPassportSale(
-        collectionName: string,
-        publicPrice: number,
-        promotionPrice: number,
-        maxSupply: number
-    ) {
-        let args = {
-            collectionName: Uint8Array.from(Buffer.from(collectionName, "utf-8")),
-            publicPrice,
-            promotionPrice,
-            maxSupply,
-        };
         await this.submitAndConfirmPayload(
             this.deployer,
             {
                 type: "script_function_payload",
-                function: `${this.moduleType}::configure_promotion_passport_sale`,
+                function: `${this.moduleType}::configure_uinverse_passport`,
                 type_arguments: [],
                 arguments: Object.values(args),
             },
@@ -106,27 +86,38 @@ class Client extends BaseClient {
     async initialize() {
         if (await this.isInitialized()) return;
         let signatureSigner = this.signatureSigner.signingKey.publicKey.slice(0, 32);
+        console.log(this.vault);
         await this.submitAndConfirmPayload(
             this.deployer,
             {
                 type: "script_function_payload",
                 function: `${this.moduleType}::initialize`,
                 type_arguments: [this.coinType],
-                arguments: [signatureSigner],
+                arguments: [signatureSigner, this.vault],
             },
             true
         );
     }
     //isPromotional, 0表示否,1表示是
     async buyKeplerPassport(buyer: AptosAccount, amount: number, isPromotional: number, referrer: string) {
+        this.buyPassport("buy_kepler_passport", buyer, amount, isPromotional, referrer);
+    }
+
+    async buyUniversePassport(buyer: AptosAccount, amount: number, isPromotional: number, referrer: string) {
+        this.buyPassport("buy_universe_passport", buyer, amount, isPromotional, referrer);
+    }
+
+    async buyPassport(fun: string, buyer: AptosAccount, amount: number, isPromotional: number, referrer: string) {
         let args = {
+            buyerAddr: `${buyer.address()}`.substring(2),
             amount: toU64Hex(amount),
             isPromotional: toU64Hex(isPromotional),
-            referrer: referrer,
+            referrer: referrer.replace("0x", ""),
         };
-
+        console.log("buyPassport: ", args);
         let message = Uint8Array.from(Buffer.concat(Object.values(args).map((item) => Buffer.from(item, "hex"))));
         let signature = await ed.sign(message, this.signatureSigner.signingKey.secretKey.slice(0, 32));
+        console.log("signature", signature);
         let signatureHex = Buffer.from(signature).toString("hex");
         let fun_arguments = [...Object.values(args), signatureHex].map((item) =>
             Uint8Array.from(Buffer.from(item, "hex"))
@@ -136,32 +127,35 @@ class Client extends BaseClient {
             buyer,
             {
                 type: "script_function_payload",
-                function: `${this.moduleType}::buy_kepler_passport`,
+                function: `${this.moduleType}::${fun}`,
                 type_arguments: [this.coinType],
                 arguments: fun_arguments,
             },
             true
         );
-        //      public entry fun buy_kepler_passport(
-        //     buyer: &signer,
-        //     amount: vector<u8>,
-        //     referrer: vector<u8>,
-        //     is_promotional: vector<u8>,
-        //     signature: vector<u8>,
-        // ) acquires GlobalStorage{
     }
 
-    async queryGlobalStorage(): Promise<any> {
-        return await this.queryModuleResource(this.deployer.address(), `GlobalStorage`);
+    async queryModuleStorage(): Promise<any> {
+        return await this.queryModuleResource(this.deployer.address(), `ModuleStorage`);
+    }
+
+    async queryKeplerPassportConfig(): Promise<any> {
+        return await this.queryModuleResource(this.deployer.address(), `KeplerPassportConfig`);
+    }
+    async queryKeplerPassportPromotionSaleStorage(): Promise<any> {
+        return await this.queryModuleResource(this.deployer.address(), `KeplerPassportPromotionSaleStorage`);
+    }
+    async queryUniversePassportConfig(): Promise<any> {
+        return await this.queryModuleResource(this.deployer.address(), `UniversePassportConfig`);
     }
     async isInitialized(): Promise<boolean> {
-        let resource = await this.queryGlobalStorage();
-        console.log("GlobalStorage", resource);
+        let resource = await this.queryModuleStorage();
+        //console.log("ModuleStorage", resource);
         return resource != null;
     }
 
     async queryResourceAccount(collectionName: string): Promise<any> {
-        let storage = await this.queryGlobalStorage();
+        let storage = await this.queryModuleStorage();
         let tableHandler = storage && storage.data.resource_accounts.handle;
         let account =
             tableHandler &&
@@ -170,64 +164,29 @@ class Client extends BaseClient {
         return account;
     }
 
-    async queryKeplerCollection(collectionName: string): Promise<any> {
+    async queryCollectionConfig(collectionName: string): Promise<any> {
         let resourceAccount = await this.queryResourceAccount(collectionName);
-        return resourceAccount && (await this.queryModuleResource(resourceAccount, `KeplerCollection`));
+        return resourceAccount && (await this.queryModuleResource(resourceAccount, `CollectionConfig`));
     }
 
     async createCollection(name: string, description: string, uri: string) {
-        if (await this.queryKeplerCollection(name)) {
+        if (await this.queryCollectionConfig(name)) {
             return;
         }
-
         let args = {
-            name: Uint8Array.from(Buffer.from(name, "utf-8")),
-            description: Uint8Array.from(Buffer.from(description, "utf-8")),
-            uri: Uint8Array.from(Buffer.from(uri, "utf-8")),
+            name: Buffer.from(name, "utf-8").toString("hex"),
+            description: Buffer.from(description, "utf-8").toString("hex"),
+            uri: Buffer.from(uri, "utf-8").toString("hex"),
+            seed: toU64Hex(Date.now()),
         };
-        //console.log("createCollection args :", args);
+        //console.log("createCollection :", args);
         await this.submitAndConfirmPayload(
             this.deployer,
             {
                 type: "script_function_payload",
                 function: `${this.moduleType}::create_collection`,
                 type_arguments: [],
-                arguments: Object.values(args),
-            },
-            true
-        );
-    }
-    async createTokenData(collectionName: string, name: string, description: string, uri: string) {
-        let args = {
-            collectionName: Uint8Array.from(Buffer.from(collectionName, "utf-8")),
-            name: Uint8Array.from(Buffer.from(name, "utf-8")),
-            description: Uint8Array.from(Buffer.from(description, "utf-8")),
-            uri: Uint8Array.from(Buffer.from(uri, "utf-8")),
-        };
-        //console.log("createTokenData args :", args);
-        await this.submitAndConfirmPayload(
-            this.deployer,
-            {
-                type: "script_function_payload",
-                function: `${this.moduleType}::create_tokendata`,
-                type_arguments: [],
-                arguments: Object.values(args),
-            },
-            true
-        );
-    }
-    async mintToken(buyer: AptosAccount, collectionName: string, name: string) {
-        let args = {
-            collectionName: Uint8Array.from(Buffer.from(collectionName, "utf-8")),
-            name: Uint8Array.from(Buffer.from(name, "utf-8")),
-        };
-        await this.submitAndConfirmPayload(
-            buyer,
-            {
-                type: "script_function_payload",
-                function: `${this.moduleType}::mint_token`,
-                type_arguments: ["0x1::aptos_coin::AptosCoin"],
-                arguments: Object.values(args),
+                arguments: Object.values(args).map((item) => Uint8Array.from(Buffer.from(item, "hex"))),
             },
             true
         );
@@ -235,36 +194,29 @@ class Client extends BaseClient {
 }
 
 async function main() {
+    let keplerCollectionName = "Kepler Passport";
+    let universeCollectionName = "Universe Passport";
     let config = readConfig();
     let deployer = parseAccount(config, "default");
     let signatureSigner = parseAccount(config, "alice");
-    let tester = parseAccount(config, "bob");
+    let bob = parseAccount(config, "bob");
+    let tom = parseAccount(config, "tom");
+    let vault = parseAccount(config, "vault");
     let coinType = "0x1::aptos_coin::AptosCoin";
-    const client = new Client(deployer, signatureSigner, coinType);
-    //await client.verifySignature(Date.now(), 12);
+    const client = new Client(deployer, signatureSigner, `${vault.address()}`, coinType);
     await client.initialize();
 
-    let collectionName = "Kepler Passport A ";
-    //await client.configureKeplerPassportPublicSale(collectionName, 200, 1000);
-    //await client.configureKeplerPassportPromotionSale(collectionName, 1000, 100, 1000, 120);
-    //await client.configurePromotionPassportSale(collectionName, 111, 222, 1000);
+    let url = "http://www.baidu.com";
+    await client.createCollection(keplerCollectionName, `${keplerCollectionName} description"`, url);
+    await client.configureKeplerPassport(keplerCollectionName, false);
 
-    await client.createCollection(collectionName, `${collectionName} description"`, "http://www.baidu.com");
+    await client.createCollection(universeCollectionName, `${universeCollectionName} description"`, url);
+    await client.configureUniversePassport(universeCollectionName, false);
 
-    await client.buyKeplerPassport(tester, 1, 1, `${deployer.address}`);
-
-    return;
-
-    const randomId = Math.ceil(Math.random() * 5000);
-    let tokenName = `${collectionName} #${randomId}`;
-    //let url = `https://aptos-api-testnet.bluemove.net/uploads/aptos-shogun/${randomId}.jpg`;
-
-    //https://storage.googleapis.com/keplernft/passport/kepler/K0001.png
-    //https://storage.googleapis.com/keplernft/passport/kepler/K5000.png
-    let url = `https://storage.googleapis.com/keplernft/passport/kepler/K${String(randomId).padStart(4, "0")}.png`;
-    console.log(url);
-    await client.createTokenData(collectionName, tokenName, `${tokenName} description`, url);
-    await client.mintToken(tester, collectionName, tokenName);
+    let isPromotional = 1;
+    let amount = 1;
+    //await client.buyKeplerPassport(bob, amount, isPromotional, `${tom.address()}`);
+    await client.buyUniversePassport(bob, amount, isPromotional, `${tom.address()}`);
 }
 
 if (require.main === module) {
