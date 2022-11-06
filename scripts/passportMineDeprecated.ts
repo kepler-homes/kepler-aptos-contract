@@ -4,14 +4,24 @@ import { BaseClient } from "./client";
 import * as ed from "@noble/ed25519";
 const UNIT = 1e6;
 
+let config = readConfig();
+let profile = process.argv[2];
+console.log("profile", profile);
+let { rest_url: nodeUrl, private_key: privateKey, account } = config.profiles[profile];
+let deployer = parseAccount(config, profile);
+console.log("nodeUrl", nodeUrl);
+console.log("privateKey", privateKey);
+console.log("account", account);
+console.log("----------------------------");
+
 let moduleName = "passport_mine_006";
 
 class Client extends BaseClient {
     coinType: string;
     signatureSigner: AptosAccount;
     vault: string;
-    constructor(deployer: AptosAccount, signatureSigner: AptosAccount, vault: string, coinType: string) {
-        super(deployer, moduleName);
+    constructor(signatureSigner: AptosAccount, vault: string, coinType: string) {
+        super(nodeUrl, deployer, moduleName);
         this.coinType = coinType;
         this.signatureSigner = signatureSigner;
         this.vault = vault;
@@ -114,10 +124,10 @@ class Client extends BaseClient {
             isPromotional: toU64Hex(isPromotional),
             referrer: referrer.replace("0x", ""),
         };
-        console.log("buyPassport: ", args);
+        //console.log("buyPassport: ", args);
         let message = Uint8Array.from(Buffer.concat(Object.values(args).map((item) => Buffer.from(item, "hex"))));
         let signature = await ed.sign(message, this.signatureSigner.signingKey.secretKey.slice(0, 32));
-        console.log("signature", signature);
+        //console.log("signature", signature);
         let signatureHex = Buffer.from(signature).toString("hex");
         let fun_arguments = [...Object.values(args), signatureHex].map((item) =>
             Uint8Array.from(Buffer.from(item, "hex"))
@@ -196,14 +206,13 @@ class Client extends BaseClient {
 async function main() {
     let keplerCollectionName = "Kepler Passport";
     let universeCollectionName = "Universe Passport";
-    let config = readConfig();
-    let deployer = parseAccount(config, "default");
+
     let signatureSigner = parseAccount(config, "alice");
     let bob = parseAccount(config, "bob");
     let tom = parseAccount(config, "tom");
     let vault = parseAccount(config, "vault");
     let coinType = "0x1::aptos_coin::AptosCoin";
-    const client = new Client(deployer, signatureSigner, `${vault.address()}`, coinType);
+    const client = new Client(signatureSigner, `${vault.address()}`, coinType);
     await client.initialize();
 
     let url = "http://www.baidu.com";

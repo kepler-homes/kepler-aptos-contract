@@ -13,18 +13,30 @@ module kepler::passport_mine_006 {
     use aptos_token::token ;
 
     const EMPTY_ADDRESS                                 :address = @0x0000000000000000000000000000000000000000000000000000000000000000;
+
     const MAX_BUY_COUNT                                 :u64 = 4;
     const COMMISSION_RATE                               :u64 = 5;
 
-    const ENOT_DEPLOYER                                 :u64 = 0x1000;
-    const EINVALID_SIGNATURE                            :u64 = 0x1001;
-    const ECOLLECTION_NOT_CREATED                       :u64 = 0x1002;
-    const EALREADY_INITIALIZED                          :u64 = 0x1003;
-    const ENOT_INITIALIZED                              :u64 = 0x1004;
-    const EINVALID_U64_BYTE_LENGTH                      :u64 = 0x1005;
-    const EINVALID_PARAMETERS                           :u64 = 0x1006;
-    const EEXCEED_MAX_BUY_AMOUNT                        :u64 = 0x1007;
-    const EEXCEED_SALE_SUPPLY                           :u64 = 0x1008;
+
+    const ENOT_ADMIN                                    :u64 = 0x1001;
+    const ENOT_DEPLOYER                                 :u64 = 0x1002;
+    const ECOIN_NOT_IN_WHITELIST                        :u64 = 0x1003;
+    const EINVALID_SIGNATURE                            :u64 = 0x1004;
+    const ECOLLECTION_NOT_CREATED                       :u64 = 0x1005;
+    const EINVALID_COLLECTION_OWNER                     :u64 = 0x1006;
+    const EINVALID_VECTOR_LENGTH                        :u64 = 0x1007;
+    const EFREN_NOT_FOUND                               :u64 = 0x1008;
+    const EFRENS_NOT_AVAILABLE                          :u64 = 0x1009;
+    const EINVALID_BALANCE                              :u64 = 0x1010;
+    const EALREADY_INITIALIZED                          :u64 = 0x1011;
+    const ENOT_INITIALIZED                              :u64 = 0x1012;
+    const EKEPLER_PASSPORT_PUBLIC_SALE_NOT_CONFIGURED   :u64 = 0x1013;
+    const EKEPLER_PASSPORT_PROMOTION_SALE_NOT_CONFIGURED:u64 = 0x1014;
+    const EUNIVERSE_PASSPORT_SALE_NOT_CONFIGURED        :u64 = 0x1015;
+    const EINVALID_U64_BYTE_LENGTH                      :u64 = 0x1016;
+    const EINVALID_PARAMETERS                           :u64 = 0x1017;
+    const EEXCEED_MAX_BUY_AMOUNT                        :u64 = 0x1018;
+    const EEXCEED_SALE_SUPPLY                          :u64 = 0x1019;
 
     struct ModuleStorage has key{
         resource_accounts: table::Table<vector<u8>,address>,
@@ -159,14 +171,14 @@ module kepler::passport_mine_006 {
         };
     }
 
-        public entry fun buy_universe_passport<CoinType>(
-            buyer: &signer,
-            buyer_addr: vector<u8>,
-            amount: vector<u8>,
-            is_promotional: vector<u8>,
-            referrer: vector<u8>,
-            signature: vector<u8>,
-        ) acquires ModuleStorage, UserStorage, CollectionConfig, UniversePassportConfig
+       public entry fun buy_universe_passport<CoinType>(
+        buyer: &signer,
+        buyer_addr: vector<u8>,
+        amount: vector<u8>,
+        is_promotional: vector<u8>,
+        referrer: vector<u8>,
+        signature: vector<u8>,
+    ) acquires ModuleStorage, UserStorage, CollectionConfig, UniversePassportConfig
     {
         assert!(util::address_from_bytes(buyer_addr)== signer::address_of(buyer), EINVALID_PARAMETERS);
         assert!(exists<ModuleStorage>(@kepler), ENOT_INITIALIZED);

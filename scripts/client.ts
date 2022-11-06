@@ -1,4 +1,3 @@
-import { NODE_URL } from "./common";
 import { AptosAccount, AptosClient, MaybeHexString, HexString } from "aptos";
 import assert from "assert";
 import fetch from "cross-fetch";
@@ -9,8 +8,8 @@ export class BaseClient extends AptosClient {
     moduleType: string;
     moduleAddress: HexString;
 
-    constructor(deployer: AptosAccount, moduleName: string) {
-        super(NODE_URL);
+    constructor(nodeUrl: string, deployer: AptosAccount, moduleName: string) {
+        super(nodeUrl);
         this.moduleName = moduleName;
         this.deployer = deployer;
         this.moduleAddress = deployer.address();
@@ -95,9 +94,9 @@ export class BaseClient extends AptosClient {
 export class BaseCoinClient extends BaseClient {
     tokenType: String;
 
-    constructor(deployer: AptosAccount, moduleName: string) {
-        super(deployer, moduleName);
-        this.tokenType = `${this.moduleType}::Coin`;
+    constructor(nodeUrl: string, deployer: AptosAccount, moduleName: string) {
+        super(nodeUrl, deployer, moduleName);
+        this.tokenType = `${this.moduleType}::T`;
     }
 
     async isRegistered(accountAddress: MaybeHexString): Promise<boolean> {
@@ -107,19 +106,27 @@ export class BaseCoinClient extends BaseClient {
     }
 
     async register(coinTypeAddress: HexString, userAccount: AptosAccount): Promise<any> {
-        return this.submitAndConfirmPayload(userAccount, {
-            function: "0x1::managed_coin::register",
-            type_arguments: [`${coinTypeAddress.hex()}::${this.moduleName}::Coin`],
-            arguments: [],
-        });
+        return this.submitAndConfirmPayload(
+            userAccount,
+            {
+                function: "0x1::managed_coin::register",
+                type_arguments: [`${coinTypeAddress.hex()}::${this.moduleName}::T`],
+                arguments: [],
+            },
+            true
+        );
     }
 
     async mint(minter: AptosAccount, user: HexString, amount: number | bigint): Promise<any> {
-        return this.submitAndConfirmPayload(minter, {
-            function: "0x1::managed_coin::mint",
-            type_arguments: [`${minter.address()}::${this.moduleName}::Coin`],
-            arguments: [user.hex(), amount],
-        });
+        return this.submitAndConfirmPayload(
+            minter,
+            {
+                function: "0x1::managed_coin::mint",
+                type_arguments: [`${minter.address()}::${this.moduleName}::T`],
+                arguments: [user.hex(), amount],
+            },
+            true
+        );
     }
     async getBalance(accountAddress: MaybeHexString): Promise<string | number> {
         try {

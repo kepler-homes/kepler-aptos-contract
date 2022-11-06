@@ -5,8 +5,8 @@ module kepler::farm_003{
     //use std::debug;
     //use std::error;
     use aptos_framework::account;
-    use aptos_framework::coin;
     use aptos_framework::managed_coin;
+    use aptos_framework::coin;
     use aptos_std::table;
     use aptos_framework::timestamp;
 

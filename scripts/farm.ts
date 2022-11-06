@@ -3,10 +3,19 @@ import { AptosAccount, MaybeHexString } from "aptos";
 import { BaseClient } from "./client";
 
 const UNIT = 1e6;
+let config = readConfig();
+let profile = process.argv[2];
+console.log("profile", profile);
+let { rest_url: nodeUrl, private_key: privateKey, account } = config.profiles[profile];
+let deployer = parseAccount(config, profile);
+console.log("nodeUrl", nodeUrl);
+console.log("privateKey", privateKey);
+console.log("account", account);
+console.log("----------------------------");
 
 class FarmClient extends BaseClient {
     constructor(deployer: AptosAccount, moduleName: string) {
-        super(deployer, moduleName);
+        super(nodeUrl, deployer, moduleName);
     }
 
     async initialize(rewardTokenType: string): Promise<any> {
@@ -136,11 +145,9 @@ class FarmClient extends BaseClient {
 }
 
 async function main() {
-    let config = readConfig();
-    let deployer = parseAccount(config, "default");
     let tester = parseAccount(config, "bob");
     const client = new FarmClient(deployer, "farm_003");
-    let coinType = `${deployer.address()}::KEME::Coin`;
+    let coinType = `${deployer.address()}::KEME::T`;
     let globalStorage = await client.queryGlobalStorage();
     console.log("globalStorage", globalStorage);
     if (!globalStorage) {
@@ -151,7 +158,7 @@ async function main() {
     if (!pool) {
         showTransaction("addPool: ", await client.addPool(coinType));
     }
-    //showTransaction("stake: ", await client.stake(tester, coinType, 123, 5));
+    showTransaction("stake: ", await client.stake(tester, coinType, 123, 5));
     //showTransaction("claim: ", await client.claim(tester, coinType, coinType, 0));
     //showTransaction("withdraw: ", await client.withdraw(tester, coinType, coinType, 0));
     //showTransaction("unstake: ", await client.unstake(tester, coinType, 0));
