@@ -7,7 +7,8 @@
     "tutorials:simple_nft": "ts-node tutorials/simple_nft.ts",
     "coin": "ts-node scripts/coin.ts",
     "farm": "ts-node scripts/farm.ts",
-    "passportMine": "ts-node scripts/passportMine.ts",
+    "passportMint": "ts-node scripts/passportMint.ts",
+    "presale": "ts-node scripts/presale.ts",
     "passport": "ts-node scripts/passport.ts"
   },
   "keywords": [],

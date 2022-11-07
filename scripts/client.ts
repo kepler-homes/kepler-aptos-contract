@@ -117,13 +117,13 @@ export class BaseCoinClient extends BaseClient {
         );
     }
 
-    async mint(minter: AptosAccount, user: HexString, amount: number | bigint): Promise<any> {
+    async mint(minter: AptosAccount, user: any, amount: number | bigint): Promise<any> {
         return this.submitAndConfirmPayload(
             minter,
             {
                 function: "0x1::managed_coin::mint",
                 type_arguments: [`${minter.address()}::${this.moduleName}::T`],
-                arguments: [user.hex(), amount],
+                arguments: [`${user}`, amount],
             },
             true
         );

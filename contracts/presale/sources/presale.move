@@ -1,7 +1,7 @@
 // buy token1 with apt
 // claim token2 with token1
 // burn token1
-module kepler::presale_002 {
+module kepler::presale_005 {
     use std::vector;
     use std::signer;
     use std::math64;
@@ -224,9 +224,15 @@ module kepler::presale_002 {
 
         let resource_signer = account::create_signer_with_capability(&global.signer_capability);
         let resource_addr = signer::address_of(&resource_signer);
-        coin::transfer<Token1>(buyer,global.fee_wallet,total_amount);
 
+        coin::transfer<Token1>(buyer,resource_addr,total_amount);
+    
         assert!(coin::balance<Token2>(resource_addr) >= total_amount, EINSUFFICIENT_TOKEN2_BALANCE);
+        
+        if(!coin::is_account_registered<Token2>(buyer_addr)){
+            managed_coin::register<Token2>(buyer);
+        };
+
         coin::transfer<Token2>(&resource_signer, buyer_addr, total_amount);
     }
 

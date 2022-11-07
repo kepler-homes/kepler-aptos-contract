@@ -3,7 +3,10 @@ import { AptosAccount, MaybeHexString, HexString, BCS, TxnBuilderTypes } from "a
 import { BaseClient } from "./client";
 import * as ed from "@noble/ed25519";
 const UNIT = 1e6;
-
+const EMPTY_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000000000";
+const BUY_TYPE_PB = 1;
+const BUY_TYPE_PT = 2;
+const BUY_TYPE_OG = 3;
 let config = readConfig();
 let profile = process.argv[2];
 console.log("profile", profile);
@@ -14,7 +17,7 @@ console.log("privateKey", privateKey);
 console.log("account", account);
 console.log("----------------------------");
 
-let moduleName = "passport_mint_001";
+let moduleName = "passport_mint_003";
 
 interface StringObject {
     [key: string]: string;
@@ -73,19 +76,11 @@ class Client extends BaseClient {
         );
     }
 
-    async pbBuy(buyer: AptosAccount, amount: number) {
-        let payload = {
-            type: "script_function_payload",
-            function: `${this.moduleType}::pb_buy`,
-            type_arguments: [this.coinType],
-            arguments: [Uint8Array.from(Buffer.from(toU64Hex(amount), "hex"))],
-        };
-        await this.submitAndConfirmPayload(buyer, payload, true);
-    }
-
-    async ptBuy(buyer: AptosAccount, amount: number) {
+    async buy(buyer: AptosAccount, referrer: string, buy_type: number, amount: number) {
         let args = {
-            buyerAddr: `${buyer.address()}`.substring(2),
+            buyer: `${buyer.address()}`.replace("0x", ""),
+            referrer: referrer.replace("0x", ""),
+            buy_type: toU64Hex(amount),
             amount: toU64Hex(amount),
         };
 
@@ -95,34 +90,17 @@ class Client extends BaseClient {
 
         let payload = {
             type: "script_function_payload",
-            function: `${this.moduleType}::pt_buy`,
+            function: `${this.moduleType}::buy`,
             type_arguments: [this.coinType],
             arguments: fun_arguments,
         };
-        await this.submitAndConfirmPayload(buyer, payload, true);
-    }
-
-    async ogBuy(buyer: AptosAccount, amount: number) {
-        let args = {
-            buyerAddr: `${buyer.address()}`.substring(2),
-            amount: toU64Hex(amount),
-        };
-
-        let fun_arguments = [...Object.values(args), await this.sign(args)].map((item) =>
-            Uint8Array.from(Buffer.from(item, "hex"))
-        );
-
-        let payload = {
-            type: "script_function_payload",
-            function: `${this.moduleType}::og_buy`,
-            type_arguments: [this.coinType],
-            arguments: fun_arguments,
-        };
+        console.log("buy", payload);
         await this.submitAndConfirmPayload(buyer, payload, true);
     }
 
     async sign(args: StringObject): Promise<string> {
-        let message = Uint8Array.from(Buffer.concat(Object.values(args).map((item) => Buffer.from(item, "hex"))));
+        let data = Object.values(args);
+        let message = Uint8Array.from(Buffer.concat(data.map((item) => Buffer.from(item, "hex"))));
         let signature = await ed.sign(message, this.signatureSigner.signingKey.secretKey.slice(0, 32));
         return Buffer.from(signature).toString("hex");
     }
@@ -194,9 +172,7 @@ async function main() {
     await client.configureKeplerPassport(keplerCollectionName, false);
 
     let amount = 1;
-    await client.pbBuy(bob, amount);
-    await client.ptBuy(bob, amount);
-    await client.ogBuy(bob, amount);
+    await client.buy(bob, EMPTY_ADDRESS, BUY_TYPE_PB, amount);
 }
 
 if (require.main === module) {
@@ -207,4 +183,12 @@ function toU64Hex(n: number): string {
     const buf = Buffer.allocUnsafe(8);
     buf.writeBigInt64BE(BigInt(n));
     return buf.toString("hex");
+}
+
+function toU8Hex(n: number): string {
+    let v = n.toString(16);
+    if (v.length == 1) {
+        v = `0${v}`;
+    }
+    return v;
 }
