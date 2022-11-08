@@ -1,7 +1,7 @@
-// buy token1 with apt
-// claim token2 with token1
-// burn token1
-module kepler::presale_005 {
+// buy vekepl with apt
+// claim kepl with vekepl
+// burn vekepl
+module kepler::presale_007 {
     use std::vector;
     use std::signer;
     use std::math64;
@@ -13,7 +13,7 @@ module kepler::presale_005 {
 
     struct BuyRecord has store{
         payment: u64,
-        token1_amount : u64,
+        vekepl_amount : u64,
         referrer: address,
         referrer_reward: u64,
         buy_time: u64,
@@ -40,8 +40,8 @@ module kepler::presale_005 {
         claim_start_time: u64,
         commission_rate: u64,
         currency: type_info::TypeInfo,
-        token1: type_info::TypeInfo,
-        token2: type_info::TypeInfo,
+        vekepl: type_info::TypeInfo,
+        kepl: type_info::TypeInfo,
         fee_wallet: address,
         sale_amount_per_round: u64,
         claim_interval: u64,
@@ -63,13 +63,13 @@ module kepler::presale_005 {
     const EEXCEED_BUY_AMOUNT                    :u64 = 0x1007;
     const EINVALID_LOCK_MONTH                   :u64 = 0x1008;
     const EINVLAID_CURRENCY                     :u64 = 0x1009;
-    const EINVLAID_TOKEN1                       :u64 = 0x100A;
-    const EINVLAID_TOKEN2                       :u64 = 0x100B;
-    const EINSUFFICIENT_TOKEN1_BALANCE          :u64 = 0x100C;
-    const EINSUFFICIENT_TOKEN2_BALANCE          :u64 = 0x100D;
+    const EINVLAID_VEKEPL                       :u64 = 0x100A;
+    const EINVLAID_KEPL                       :u64 = 0x100B;
+    const EINSUFFICIENT_VEKEPL_BALANCE          :u64 = 0x100C;
+    const EINSUFFICIENT_KEPL_BALANCE          :u64 = 0x100D;
     const ENOT_BUYER                            :u64 = 0x100E;
 
-    public entry fun initialize<Currency,Token1,Token2>(
+    public entry fun initialize<Currency,VeKEPL,KEPL>(
         deployer:&signer,
         base_price: u64,
         claim_start_time: u64,
@@ -86,15 +86,15 @@ module kepler::presale_005 {
         assert!(addr==@kepler, ENOT_DEPLOYER);
         assert!(!exists<ModuleStorage>(addr), EALREADY_INITIALIZED);
         let (resource_signer, signer_capability) = account::create_resource_account(deployer, seed);
-        managed_coin::register<Token1>(&resource_signer);
-        managed_coin::register<Token2>(&resource_signer);
+        managed_coin::register<VeKEPL>(&resource_signer);
+        managed_coin::register<KEPL>(&resource_signer);
         move_to(deployer, ModuleStorage{
             base_price,
             claim_start_time,
             commission_rate,
             currency: type_info::type_of<Currency>(),
-            token1: type_info::type_of<Token1>(),
-            token2: type_info::type_of<Token2>(),
+            vekepl: type_info::type_of<VeKEPL>(),
+            kepl: type_info::type_of<KEPL>(),
             fee_wallet,
             sale_amount_per_round,
             claim_interval,
@@ -107,7 +107,7 @@ module kepler::presale_005 {
         });
     }
 
-     public entry fun update_config<Currency,Token1,Token2>(
+     public entry fun update_config<Currency,VeKEPL,KEPL>(
         deployer:&signer,
         base_price: u64,
         claim_start_time: u64,
@@ -127,8 +127,8 @@ module kepler::presale_005 {
         global.claim_start_time=claim_start_time;
         global.commission_rate=commission_rate;
         global.currency= type_info::type_of<Currency>();
-        global.token1= type_info::type_of<Token1>();
-        global.token2= type_info::type_of<Token2>();
+        global.vekepl= type_info::type_of<VeKEPL>();
+        global.kepl= type_info::type_of<KEPL>();
         global.fee_wallet=fee_wallet;
         global.sale_amount_per_round=sale_amount_per_round;
         global.claim_interval=claim_interval;
@@ -139,7 +139,7 @@ module kepler::presale_005 {
 
     }
 
-    public entry fun buy_token1<Currency,Token1>(
+    public entry fun buy_vekepl<Currency,VeKEPL>(
         buyer:&signer,
         payment: u64,
         lock_periods:u64,
@@ -155,8 +155,8 @@ module kepler::presale_005 {
         assert!(payment <= global.max_buy_amount, EEXCEED_BUY_AMOUNT);
         assert!(lock_periods >= 6 && lock_periods <= 60, EINVALID_LOCK_MONTH);
         assert!(type_info::type_of<Currency>() == global.currency, EINVLAID_CURRENCY);
-        assert!(type_info::type_of<Token1>() == global.token1, EINVLAID_TOKEN1);
-        let token1_amount = get_buyable_token1_amount(global,payment);
+        assert!(type_info::type_of<VeKEPL>() == global.vekepl, EINVLAID_VEKEPL);
+        let vekepl_amount = get_buyable_vekepl_amount(global,payment);
         let referrer_reward = 0;
         if(referrer!=EMPTY_ADDRESS){
             if(exists<UserStorage>(referrer)){
@@ -180,7 +180,7 @@ module kepler::presale_005 {
         number_add(&mut global.saled_amount,payment);
         vector::push_back(&mut user_storage.buy_records,BuyRecord{
             payment,
-            token1_amount,
+            vekepl_amount,
             referrer,
             referrer_reward,
             buy_time: now,
@@ -197,16 +197,16 @@ module kepler::presale_005 {
         };
         let resource_signer = account::create_signer_with_capability(&global.signer_capability);
         let resource_addr = signer::address_of(&resource_signer);
-        assert!(coin::balance<Token1>(resource_addr) >= token1_amount, EINSUFFICIENT_TOKEN1_BALANCE);
-        coin::transfer<Token1>(&resource_signer, buyer_addr, token1_amount);
+        assert!(coin::balance<VeKEPL>(resource_addr) >= vekepl_amount, EINSUFFICIENT_VEKEPL_BALANCE);
+        coin::transfer<VeKEPL>(&resource_signer, buyer_addr, vekepl_amount);
     }
 
-    public entry fun claim_token2< Token1,Token2>(buyer:&signer ) acquires ModuleStorage, UserStorage {
+    public entry fun claim_kepl< VeKEPL,KEPL>(buyer:&signer ) acquires ModuleStorage, UserStorage {
         let buyer_addr = signer::address_of(buyer);
         assert!(exists<ModuleStorage>(@kepler), ENOT_INITIALIZED);
         let global = borrow_global_mut<ModuleStorage>(@kepler);
-        assert!(type_info::type_of<Token1>() == global.token1, EINVLAID_TOKEN1);
-        assert!(type_info::type_of<Token2>() == global.token2, EINVLAID_TOKEN2);
+        assert!(type_info::type_of<VeKEPL>() == global.vekepl, EINVLAID_VEKEPL);
+        assert!(type_info::type_of<KEPL>() == global.kepl, EINVLAID_KEPL);
         assert!(exists<UserStorage>(buyer_addr),ENOT_BUYER);
         let user_storage = borrow_global_mut<UserStorage>(buyer_addr);
 
@@ -225,15 +225,16 @@ module kepler::presale_005 {
         let resource_signer = account::create_signer_with_capability(&global.signer_capability);
         let resource_addr = signer::address_of(&resource_signer);
 
-        coin::transfer<Token1>(buyer,resource_addr,total_amount);
-    
-        assert!(coin::balance<Token2>(resource_addr) >= total_amount, EINSUFFICIENT_TOKEN2_BALANCE);
-        
-        if(!coin::is_account_registered<Token2>(buyer_addr)){
-            managed_coin::register<Token2>(buyer);
+        coin::transfer<VeKEPL>(buyer,resource_addr,total_amount);
+        //managed_coin::burn<VeKEPL>(&resource_signer,total_amount);
+
+        assert!(coin::balance<KEPL>(resource_addr) >= total_amount, EINSUFFICIENT_KEPL_BALANCE);
+
+        if(!coin::is_account_registered<KEPL>(buyer_addr)){
+            managed_coin::register<KEPL>(buyer);
         };
 
-        coin::transfer<Token2>(&resource_signer, buyer_addr, total_amount);
+        coin::transfer<KEPL>(&resource_signer, buyer_addr, total_amount);
     }
 
     fun queryClaimables(global: &ModuleStorage,user_storage: &UserStorage): vector<ClaimRecord> {
@@ -265,18 +266,18 @@ module kepler::presale_005 {
         while (i < length) {
             let buy_record = vector::borrow(&user_storage.buy_records,i);
             if (buy_record.lock_periods > claim_index) {
-                claim_amount =claim_amount+ buy_record.token1_amount / buy_record.lock_periods;
+                claim_amount =claim_amount+ buy_record.vekepl_amount / buy_record.lock_periods;
             };
              i = i+1;
         };
         claim_amount
     }
 
-    fun get_buyable_token1_amount(global: &ModuleStorage, payment: u64): u64 {
+    fun get_buyable_vekepl_amount(global: &ModuleStorage, payment: u64): u64 {
         let saled_amount = global.saled_amount;
         let sale_amount_per_round = global.sale_amount_per_round;
         let round = saled_amount / sale_amount_per_round;
-        let token1_amount = 0 ;
+        let vekepl_amount = 0 ;
         let round_prices = global.round_prices;
         let length = vector::length(& round_prices);
         let i = round;
@@ -287,17 +288,17 @@ module kepler::presale_005 {
             if (saled_amount + payment > round_max_amount) {
                 // exceed current round
                 let amount = round_max_amount - saled_amount;
-                token1_amount = token1_amount + amount * multiplier / price;
+                vekepl_amount = vekepl_amount + amount * multiplier / price;
                 payment = payment -  amount;
                 saled_amount = saled_amount +  amount;
             } else {
-                token1_amount = token1_amount+ payment * multiplier / price;
+                vekepl_amount = vekepl_amount+ payment * multiplier / price;
                 break
             };
             i = i + 1;
         };
 
-        token1_amount/multiplier
+        vekepl_amount/multiplier
     }
 
     fun calculate_round_prices(base_price: u64): vector<u64> {

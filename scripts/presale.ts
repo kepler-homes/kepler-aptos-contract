@@ -1,12 +1,12 @@
-import { readConfig, parseAccount, toHexString } from "./common";
-import { AptosAccount, MaybeHexString, HexString, BCS, TxnBuilderTypes } from "aptos";
+import { readConfig, parseAccount } from "./common";
+import { AptosAccount } from "aptos";
 import { BaseClient, BaseCoinClient } from "./client";
 
 interface SimpleKeyValueObject {
     [key: string]: any;
 }
 
-let module_name = "presale_005";
+let module_name = "presale_007";
 const GAS_UNIT = 1;
 const APT = GAS_UNIT * 1e6;
 const EMPTY_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -28,8 +28,8 @@ let bob = parseAccount(config, "bob");
 let tom = parseAccount(config, "tom");
 let vault = parseAccount(config, "vault");
 let currency = "0x1::aptos_coin::AptosCoin";
-let token1 = `${deployer.address()}::VeKEPL::T`;
-let token2 = `${deployer.address()}::KEPL::T`;
+let vekepl = `${deployer.address()}::VeKEPL::T`;
+let kepl = `${deployer.address()}::KEPL::T`;
 
 function hexToString(hex: string): string {
     return Buffer.from(hex.replace("0x", ""), "hex").toString();
@@ -75,7 +75,7 @@ class PresaleClient extends BaseClient {
             refeerer_min_buy_amount: apt_to_gas_unit(1),
         };
         return {
-            types: { currency, token1, token2 },
+            types: { currency, vekepl, kepl },
             values: {
                 base_price: config.base_price,
                 claim_start_time: config.claim_time,
@@ -129,52 +129,52 @@ class PresaleClient extends BaseClient {
             await this.submitAndConfirmPayload(this.deployer, payload, true);
         }
     }
-    async buy_token1(user: AptosAccount) {
+    async buy_vekepl(user: AptosAccount) {
         let { types, values } = this.get_config(profile);
-        let type_arguments = { currency, token1 };
+        let type_arguments = { currency, vekepl };
         let args = { payment: values.min_buy_amount + 1, lock_periods: 6, referrer: EMPTY_ADDRESS };
         let payload = {
             type: "script_function_payload",
-            function: `${this.moduleType}::buy_token1`,
+            function: `${this.moduleType}::buy_vekepl`,
             type_arguments: Object.values(type_arguments),
             arguments: [...Object.values(args)],
         };
-        console.log("buy_token1, payload: ", payload);
+        console.log("buy_vekepl, payload: ", payload);
         await this.submitAndConfirmPayload(user, payload, true);
     }
 
-    async claim_token2(user: AptosAccount) {
+    async claim_kepl(user: AptosAccount) {
         let payload = {
             type: "script_function_payload",
-            function: `${this.moduleType}::claim_token2`,
-            type_arguments: [token1, token2],
+            function: `${this.moduleType}::claim_kepl`,
+            type_arguments: [vekepl, kepl],
             arguments: [],
         };
-        console.log("claim_token2, payload: ", payload);
+        console.log("claim_kepl, payload: ", payload);
         await this.submitAndConfirmPayload(user, payload, true);
     }
 }
 
 async function main() {
     const client = new PresaleClient();
-    let token1Client = new BaseCoinClient(nodeUrl, deployer, "VeKEPL");
-    let token2Client = new BaseCoinClient(nodeUrl, deployer, "KEPL");
+    let vekeplClient = new BaseCoinClient(nodeUrl, deployer, "VeKEPL");
+    let keplClient = new BaseCoinClient(nodeUrl, deployer, "KEPL");
     await client.initialize();
     await client.update_config();
     if (profile != "mainnet") {
         let storage = await client.queryModuleStorage();
         console.log("storage", storage);
-        //await token1Client.mint(deployer, storage.data.signer_capability.account, APT * 100000000);
-        //await token2Client.mint(deployer, storage.data.signer_capability.account, APT * 100000000);
+        //await vekeplClient.mint(deployer, storage.data.signer_capability.account, APT * 100000000);
+        //await keplClient.mint(deployer, storage.data.signer_capability.account, APT * 100000000);
     }
-    let balance1 = await token1Client.getBalance(bob.address());
+    let balance1 = await vekeplClient.getBalance(bob.address());
     console.log("balance1", balance1);
-    await client.buy_token1(bob);
+    await client.buy_vekepl(bob);
 
-    let balance2 = await token1Client.getBalance(bob.address());
+    let balance2 = await vekeplClient.getBalance(bob.address());
     console.log("balance2", balance2);
 
-    await client.claim_token2(bob);
+    await client.claim_kepl(bob);
 }
 
 if (require.main === module) {

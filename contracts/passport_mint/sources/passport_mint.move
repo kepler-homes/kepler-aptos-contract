@@ -152,12 +152,12 @@ module kepler::passport_mint_003 {
         }else if(buy_type == BUY_TYPE_PT){
             let (supply,sell_amount,total_pay) = get_pt_parameters(config,amount);
             buy_passport<CoinType>(buyer,referrer,buy_type,amount,config.collection_name,supply,sell_amount,total_pay);
-            number_add(&mut config.pb_sell_amount,amount);
+            number_add(&mut config.pt_sell_amount,amount);
         } else if(buy_type == BUY_TYPE_OG){
             assert!(config.og_start_time>0 && timestamp::now_seconds() > config.og_start_time, EINVALID_BUY_TIME);
             let (supply,sell_amount,total_pay) = (config.og_supply,config.og_sell_amount,config.og_price*amount);
             buy_passport<CoinType>(buyer,referrer,buy_type,amount,config.collection_name,supply,sell_amount,total_pay);
-            number_add(&mut config.pb_sell_amount,amount);
+            number_add(&mut config.og_sell_amount,amount);
         }
     }
 
