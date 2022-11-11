@@ -8,6 +8,7 @@
     "coin": "ts-node scripts/coin.ts",
     "farm": "ts-node scripts/farm.ts",
     "passportMint": "ts-node scripts/passportMint.ts",
+    "passportStake": "ts-node scripts/passportStake.ts",
     "presale": "ts-node scripts/presale.ts",
     "passport": "ts-node scripts/passport.ts"
   },

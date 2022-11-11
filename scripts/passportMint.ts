@@ -125,13 +125,39 @@ class Client extends BaseClient {
         let account =
             tableHandler &&
             (await this.queryTableItem(`${tableHandler}`, "0x1::string::String", "address", collectionName));
-        console.log("resourceAccount", account);
+        //console.log("resourceAccount", account);
         return account;
     }
 
     async queryCollectionConfig(collectionName: string): Promise<any> {
         let resourceAccount = await this.queryResourceAccount(collectionName);
         return resourceAccount && (await this.queryModuleResource(resourceAccount, `CollectionConfig`));
+    }
+
+    async queryReferenceRecords(collectionName: string, user: MaybeHexString) {
+        let collectionConfig = await this.queryCollectionConfig(collectionName);
+        //console.log(collectionConfig);
+        let { handle } = (collectionConfig && collectionConfig.data && collectionConfig.data.reference_records) || {};
+        //console.log(handle);
+        return await this.queryTableItem(
+            handle,
+            "address",
+            "vector<0x9a0941b276f496cfa374e433c56e646182fb667578a38feafebfe497ddbbb8e1::passport_mint_003::Record>",
+            `${user}`
+        );
+    }
+
+    async queryBuyRecords(collectionName: string, user: MaybeHexString) {
+        let collectionConfig = await this.queryCollectionConfig(collectionName);
+        //console.log(collectionConfig);
+        let { handle } = (collectionConfig && collectionConfig.data && collectionConfig.data.buy_records) || {};
+        //console.log(handle);
+        return await this.queryTableItem(
+            handle,
+            "address",
+            "vector<0x9a0941b276f496cfa374e433c56e646182fb667578a38feafebfe497ddbbb8e1::passport_mint_003::Record>",
+            `${user}`
+        );
     }
 
     async createCollection(name: string, description: string, uri: string) {
@@ -171,8 +197,11 @@ async function main() {
     await client.createCollection(keplerCollectionName, `${keplerCollectionName} description"`, url);
     await client.configureKeplerPassport(keplerCollectionName, false);
 
-    let amount = 1;
-    await client.buy(bob, EMPTY_ADDRESS, BUY_TYPE_PB, amount);
+    //await client.buy(bob, EMPTY_ADDRESS, BUY_TYPE_PB, 1);
+    let referenceRecords = await client.queryReferenceRecords(keplerCollectionName, bob.address());
+    console.log("referenceRecords", referenceRecords);
+    let buyRecords = await client.queryBuyRecords(keplerCollectionName, bob.address());
+    console.log("buyRecords", buyRecords);
 }
 
 if (require.main === module) {

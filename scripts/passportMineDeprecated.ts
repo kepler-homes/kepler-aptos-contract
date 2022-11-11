@@ -170,7 +170,7 @@ class Client extends BaseClient {
         let account =
             tableHandler &&
             (await this.queryTableItem(`${tableHandler}`, "0x1::string::String", "address", collectionName));
-        console.log("resourceAccount", account);
+        //console.log("resourceAccount", account);
         return account;
     }
 

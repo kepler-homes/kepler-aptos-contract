@@ -1,0 +1,15 @@
+[package]
+name = "passport_stake_003"
+version = "0.0.1"
+
+[addresses]
+aptos_framework = "0x1"
+aptos_std = "0x1"
+aptos_token = "0x3"
+kepler = "_"
+std = "0x1"
+
+[dependencies]
+AptosFramework = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework/", rev = "devnet"}
+AptosStdlib = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-stdlib/", rev = "devnet"}
+AptosToken = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-token/", rev = "devnet"}
