@@ -203,7 +203,7 @@ module kepler::passport_stake_003 {
     ) acquires ModuleStore,UserStore  {
         let addr = signer::address_of(sender);
         assert!(exists<ModuleStore>(@kepler), ENOT_INITIALIZED);
-        assert!(exists<UserStore>(@kepler), EUSER_STORE_NOT_FOUND);
+        assert!(exists<UserStore>(addr), EUSER_STORE_NOT_FOUND);
         let module_store = borrow_global_mut<ModuleStore>(@kepler);
  
         let collection_id = create_collection_id(collection_creator,collection_name);
@@ -228,7 +228,7 @@ module kepler::passport_stake_003 {
 
         let escrow = vector::borrow(&user_store.escrows,index);
 
-        assert!(escrow.stake_time+escrow.lock_units*collection.lock_unit_span>timestamp::now_seconds(), EUNSTAKE_BEFORE_LOCKUP_TIME);
+        assert!(escrow.stake_time+escrow.lock_units*collection.lock_unit_span<=timestamp::now_seconds(), EUNSTAKE_BEFORE_LOCKUP_TIME);
 
         token::deposit_token(sender,withdraw_token_from_user_store(user_store,token_id));
 
@@ -321,6 +321,7 @@ module kepler::passport_stake_003 {
                 lock_units = 0;
             };
             vector::push_back(&mut lock_units_vector, lock_units);
+            i = i + 1;
         };
         lock_units_vector
     }

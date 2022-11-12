@@ -1,4 +1,4 @@
-import { AptosAccount, AptosClient, MaybeHexString, HexString } from "aptos";
+import { AptosAccount, AptosClient, MaybeHexString, HexString, TokenClient } from "aptos";
 import assert from "assert";
 import fetch from "cross-fetch";
 
@@ -61,7 +61,7 @@ export class BaseClient extends AptosClient {
         return await this.queryResource(user, resourceType);
     }
 
-    async queryTableItem(tableHandler: string, keyType: string, valueType: string, key: string): Promise<any> {
+    async queryTableItem(tableHandler: string, keyType: string, valueType: string, key: any): Promise<any> {
         let url = `${this.nodeUrl}/tables/${tableHandler}/item`;
         let data = { key_type: keyType, value_type: valueType, key };
         let headers = { "Content-Type": "application/json" };

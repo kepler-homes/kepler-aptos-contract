@@ -157,10 +157,11 @@ class PresaleClient extends BaseClient {
 
 async function main() {
     const client = new PresaleClient();
-    let vekeplClient = new BaseCoinClient(nodeUrl, deployer, "VeKEPL");
-    let keplClient = new BaseCoinClient(nodeUrl, deployer, "KEPL");
+
     await client.initialize();
     await client.update_config();
+    let vekeplClient = new BaseCoinClient(nodeUrl, deployer, "VeKEPL");
+    let keplClient = new BaseCoinClient(nodeUrl, deployer, "KEPL");
     if (profile != "mainnet") {
         let storage = await client.queryModuleStorage();
         console.log("storage", storage);

@@ -1,6 +1,7 @@
 import { readConfig, parseAccount, toHexString } from "./common";
 import { AptosAccount, MaybeHexString, HexString, BCS, TxnBuilderTypes } from "aptos";
 import { BaseClient } from "./client";
+import { readModuleResource, saveModuleResource } from "./utils/resource";
 import * as ed from "@noble/ed25519";
 const UNIT = 1e6;
 const EMPTY_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -15,6 +16,11 @@ let deployer = parseAccount(config, profile);
 console.log("nodeUrl", nodeUrl);
 console.log("privateKey", privateKey);
 console.log("account", account);
+let collectionName = "Kepler Passport";
+let signatureSigner = parseAccount(config, "alice");
+let bob = parseAccount(config, "bob");
+let vault = parseAccount(config, "vault");
+let coinType = "0x1::aptos_coin::AptosCoin";
 console.log("----------------------------");
 
 let moduleName = "passport_mint_003";
@@ -84,15 +90,12 @@ class Client extends BaseClient {
             amount: toU64Hex(amount),
         };
 
-        let fun_arguments = [...Object.values(args), await this.sign(args)].map((item) =>
-            Uint8Array.from(Buffer.from(item, "hex"))
-        );
-
+        let fun_arguments = [...Object.values(args), await this.sign(args)];
         let payload = {
             type: "script_function_payload",
             function: `${this.moduleType}::buy`,
             type_arguments: [this.coinType],
-            arguments: fun_arguments,
+            arguments: fun_arguments.map((item) => [...Buffer.from(item, "hex")]),
         };
         console.log("buy", payload);
         await this.submitAndConfirmPayload(buyer, payload, true);
@@ -131,7 +134,9 @@ class Client extends BaseClient {
 
     async queryCollectionConfig(collectionName: string): Promise<any> {
         let resourceAccount = await this.queryResourceAccount(collectionName);
-        return resourceAccount && (await this.queryModuleResource(resourceAccount, `CollectionConfig`));
+        let config = resourceAccount && (await this.queryModuleResource(resourceAccount, `CollectionConfig`));
+        //console.log("collection config", config);
+        return config;
     }
 
     async queryReferenceRecords(collectionName: string, user: MaybeHexString) {
@@ -185,22 +190,30 @@ class Client extends BaseClient {
 }
 
 async function main() {
-    let keplerCollectionName = "Kepler Passport";
-    let signatureSigner = parseAccount(config, "alice");
-    let bob = parseAccount(config, "bob");
-    let vault = parseAccount(config, "vault");
-    let coinType = "0x1::aptos_coin::AptosCoin";
     const client = new Client(signatureSigner, `${vault.address()}`, coinType);
+    await deploy(client);
+    //await verify(client);
+}
+
+async function deploy(client: Client) {
     await client.initialize();
-
     let url = "https://www.kepler.homes/";
-    await client.createCollection(keplerCollectionName, `${keplerCollectionName} description"`, url);
-    await client.configureKeplerPassport(keplerCollectionName, false);
+    await client.createCollection(collectionName, `${collectionName} description"`, url);
+    await client.configureKeplerPassport(collectionName, false);
 
-    //await client.buy(bob, EMPTY_ADDRESS, BUY_TYPE_PB, 1);
-    let referenceRecords = await client.queryReferenceRecords(keplerCollectionName, bob.address());
+    let moduleResource = readModuleResource(profile, "passport_mint");
+    moduleResource["module_store"] = await client.queryModuleStorage();
+    moduleResource["kepler_collection_config"] = await client.queryCollectionConfig(collectionName);
+    //moduleResource["kepler_passport_config"] = await client.queryKeplerPassportConfig();
+    saveModuleResource(profile, "passport_mint", moduleResource);
+    console.log("moduleResource", moduleResource);
+}
+
+async function verify(client: Client) {
+    await client.buy(bob, EMPTY_ADDRESS, BUY_TYPE_PB, 1);
+    let referenceRecords = await client.queryReferenceRecords(collectionName, bob.address());
     console.log("referenceRecords", referenceRecords);
-    let buyRecords = await client.queryBuyRecords(keplerCollectionName, bob.address());
+    let buyRecords = await client.queryBuyRecords(collectionName, bob.address());
     console.log("buyRecords", buyRecords);
 }
 
