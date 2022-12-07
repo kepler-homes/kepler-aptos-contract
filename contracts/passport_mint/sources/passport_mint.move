@@ -1,4 +1,4 @@
-module kepler::passport_mint_003 {
+module kepler::passport_mint_004 {
     use std::vector;
     use std::signer;
     use std::string;
@@ -10,8 +10,9 @@ module kepler::passport_mint_003 {
     use aptos_framework::coin;
     use aptos_framework::timestamp;
     use aptos_framework::util;
+    use aptos_framework::event::{Self, EventHandle};
     use aptos_token::token;
-    
+
     const EMPTY_ADDRESS             :address = @0x0000000000000000000000000000000000000000000000000000000000000000;
     const COMMISSION_RATE           :u64 = 5;
     const MAX_BUY_COUNT             :u64 = 2;
@@ -37,17 +38,32 @@ module kepler::passport_mint_003 {
         signature_pubkey: vector<u8>,
         currency:  type_info::TypeInfo,
         vault: address,
+        records: vector<Record>,
+        mint_events: EventHandle<MintEvent>,
     }
 
-    struct Record has store ,copy,drop{
+    struct Record has store,copy,drop{
         buyer: address,
-        buy_amount: u64,
         buy_type: u64,
         total_pay: u64,
         referrer: address,
         referral_reward: u64,
         buy_time: u64,
+        token_data_ids: vector<token::TokenDataId>,
     }
+
+    struct MintEvent has drop, store {
+        buyer: address,
+        buy_type: u64,
+        total_pay: u64,
+        referrer: address,
+        referral_reward: u64,
+        buy_time: u64,
+        // event::emit_event<StakeEvent>(&mut module_store.stake_events,event)
+        token_data_ids: vector<token::TokenDataId>,
+    }
+
+
     struct CollectionConfig has key {
         name: vector<u8>,
         description: vector<u8>,
@@ -88,7 +104,9 @@ module kepler::passport_mint_003 {
             resource_accounts: table::new(),
             currency: type_info::type_of<CoinType>(),
             signature_pubkey: signature_pubkey,
-            vault
+            vault,
+            records: vector::empty(),
+            mint_events: account::new_event_handle<MintEvent>(deployer),
         });
     }
 
@@ -172,7 +190,6 @@ module kepler::passport_mint_003 {
         (supply,sell_amount,total_pay)
     }
 
-     
 
     fun buy_passport<CoinType>(
         buyer: &signer,
@@ -186,16 +203,23 @@ module kepler::passport_mint_003 {
     ) acquires ModuleStorage, CollectionConfig
     {
         let addr = signer::address_of(buyer);
-        let global = borrow_global<ModuleStorage>(@kepler);
+        let global = borrow_global_mut<ModuleStorage>(@kepler);
         assert!(amount>0, EINVALID_PARAMETERS);
         assert!(table::contains(&global.resource_accounts, collection_name), ECOLLECTION_NOT_CREATED);
         let collection_resource = *table::borrow(&global.resource_accounts, collection_name);
         assert!(exists<CollectionConfig>(collection_resource),ECOLLECTION_NOT_CREATED);
         let collection  = borrow_global_mut<CollectionConfig>(collection_resource);
-        
+
         if(!table::contains(&collection.buy_records, addr)){
             table::add(&mut collection.buy_records,addr,vector::empty<Record>());
         };
+
+        let (i,token_data_ids) = (0, vector::empty<token::TokenDataId>());
+        while(i < amount) {
+            vector::push_back(&mut token_data_ids, mint_token_to(buyer,collection));
+            i = i + 1;
+        };
+
         let buy_records = table::borrow_mut(&mut collection.buy_records, addr);
         assert!(amount + vector::length(buy_records)<= MAX_BUY_COUNT, EEXCEED_MAX_BUY_AMOUNT);
         assert!(amount + sell_amount <= supply, EEXCEED_SALE_SUPPLY);
@@ -204,26 +228,38 @@ module kepler::passport_mint_003 {
         if(referral_reward>0) {
             coin::transfer<CoinType>(buyer,referrer,referral_reward);
         };
+
         let record = Record {
             buyer: addr,
-            buy_amount: amount,
             buy_type,
             total_pay,
             referrer,
             referral_reward,
             buy_time: timestamp::now_seconds(),
+            token_data_ids
         };
+
         vector::push_back(buy_records,record);
+        vector::push_back(&mut global.records,record);
 
         if(referrer != EMPTY_ADDRESS){
             if(!table::contains(&collection.reference_records, referrer)){
                 table::add(&mut collection.reference_records,referrer,vector::empty<Record>());
-             };
+            };
             let reference_records = table::borrow_mut(&mut collection.reference_records, referrer);
             vector::push_back(reference_records,record);
         };
 
-        mint_token_to(buyer,collection);
+        event::emit_event<MintEvent>(&mut global.mint_events,MintEvent{
+            buyer: addr,
+            buy_type,
+            total_pay,
+            referrer,
+            referral_reward,
+            buy_time: timestamp::now_seconds(),
+            token_data_ids
+        });
+
     }
 
     fun verify_signature(buyer_addr: vector<u8>, referrer_addr:vector<u8>, buy_type: vector<u8>, amount: vector<u8>, signature: vector<u8>)
@@ -239,7 +275,7 @@ module kepler::passport_mint_003 {
         let verified = ed25519::signature_verify_strict(&signature,&pubkey,message);
         assert!(verified,EINVALID_SIGNATURE);
     }
- 
+
     public entry fun configure_kepler_passport (
         deployer:&signer,
         collection_name: vector<u8>,
@@ -298,7 +334,7 @@ module kepler::passport_mint_003 {
         value
     }
 
-    fun mint_token_to(buyer: &signer,collection: &mut CollectionConfig) {
+    fun mint_token_to(buyer: &signer,collection: &mut CollectionConfig): token::TokenDataId {
         let token_id= u64_to_raw_string(collection.next_token_id,4);
         number_add(&mut collection.next_token_id,1);
         let name = vector::empty<u8>();
@@ -319,9 +355,10 @@ module kepler::passport_mint_003 {
         // Mint the NFT to the buyer account
         let buyer_addr = signer::address_of(buyer);
         token::mint_token_to(&resource_signer,buyer_addr, token_data_id, 1);
+        token_data_id
     }
 
-     fun create_token_data_id(
+    fun create_token_data_id(
         resource_signer :&signer,
         collection_name:vector<u8>,
         name: vector<u8>,

@@ -1,0 +1,16 @@
+[package]
+license = "MIT"
+name = "marketplace_v01"
+version = "0.1.0"
+
+[addresses]
+aptos_framework = "0x1"
+aptos_std = "0x1"
+aptos_token = "0x3"
+kepler = "0x9a0941b276f496cfa374e433c56e646182fb667578a38feafebfe497ddbbb8e1"
+std = "0x1"
+
+[dependencies]
+AptosFramework = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework/", rev = "main"}
+AptosStdlib = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-stdlib/", rev = "main"}
+AptosToken = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-token/", rev = "main"}

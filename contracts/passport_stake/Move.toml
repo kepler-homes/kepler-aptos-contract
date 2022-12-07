@@ -1,12 +1,12 @@
 [package]
-name = "passport_stake_003"
+name = "passport_stake_005"
 version = "0.0.1"
 
 [addresses]
 aptos_framework = "0x1"
 aptos_std = "0x1"
 aptos_token = "0x3"
-kepler = "_"
+kepler = "0x9a0941b276f496cfa374e433c56e646182fb667578a38feafebfe497ddbbb8e1"
 std = "0x1"
 
 [dependencies]

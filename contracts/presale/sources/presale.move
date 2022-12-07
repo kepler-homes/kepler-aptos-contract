@@ -1,7 +1,7 @@
 // buy vekepl with apt
 // claim kepl with vekepl
 // burn vekepl
-module kepler::presale_007 {
+module kepler::presale {
     use std::vector;
     use std::signer;
     use std::math64;
@@ -10,8 +10,21 @@ module kepler::presale_007 {
     use aptos_framework::managed_coin;
     use aptos_framework::coin;
     use aptos_framework::timestamp;
+    use aptos_std::event::{Self, EventHandle};
+    
+    struct BuyEvent has drop, store {
+        buyer: address,
+        payment: u64,
+        vekepl_amount : u64,
+        referrer: address,
+        referrer_reward: u64,
+        buy_time: u64,
+        lock_periods: u64,
+    }
 
-    struct BuyRecord has store{
+
+    struct BuyRecord has store,copy{
+        buyer: address,
         payment: u64,
         vekepl_amount : u64,
         referrer: address,
@@ -28,6 +41,7 @@ module kepler::presale_007 {
 
     struct UserStorage has key{
         buy_records:  vector<BuyRecord>,
+        reference_records:  vector<BuyRecord>,
         claim_records:  vector<ClaimRecord>,
         claimed_count: u64,
         total_payments: u64,
@@ -50,24 +64,30 @@ module kepler::presale_007 {
         refeerer_min_buy_amount: u64,
         round_prices: vector<u64>,
         saled_amount: u64,
+        buy_events: EventHandle<BuyEvent>,
     }
 
     const EMPTY_ADDRESS :address = @0x0000000000000000000000000000000000000000000000000000000000000000;
+    const UNIT  :u128 = 100000000;
 
-    const ENOT_DEPLOYER                         :u64 = 0x1001;
-    const EALREADY_INITIALIZED                  :u64 = 0x1002;
-    const ENOT_INITIALIZED                      :u64 = 0x1003;
-    const EBUY_FORBIDDEN_AFTER_CLAIM_STARTED    :u64 = 0x1004;
-    const EINVALID_REFERRER                     :u64 = 0x1005;
-    const EINSUFFICIENT_BUY_AMOUNT              :u64 = 0x1006;
-    const EEXCEED_BUY_AMOUNT                    :u64 = 0x1007;
-    const EINVALID_LOCK_MONTH                   :u64 = 0x1008;
-    const EINVLAID_CURRENCY                     :u64 = 0x1009;
-    const EINVLAID_VEKEPL                       :u64 = 0x100A;
-    const EINVLAID_KEPL                       :u64 = 0x100B;
-    const EINSUFFICIENT_VEKEPL_BALANCE          :u64 = 0x100C;
-    const EINSUFFICIENT_KEPL_BALANCE          :u64 = 0x100D;
-    const ENOT_BUYER                            :u64 = 0x100E;
+    const ENOT_DEPLOYER                             :u64 = 0x1001;
+    const EALREADY_INITIALIZED                      :u64 = 0x1002;
+    const ENOT_INITIALIZED                          :u64 = 0x1003;
+    const EBUY_FORBIDDEN_AFTER_CLAIM_STARTED        :u64 = 0x1004;
+    const EINVALID_REFERRER                         :u64 = 0x1005;
+    const EINSUFFICIENT_BUY_AMOUNT                  :u64 = 0x1006;
+    const EEXCEED_BUY_AMOUNT                        :u64 = 0x1007;
+    const EINVALID_LOCK_MONTH                       :u64 = 0x1008;
+    const EINVLAID_CURRENCY                         :u64 = 0x1009;
+    const EINVLAID_VEKEPL                           :u64 = 0x100A;
+    const EINVLAID_KEPL                             :u64 = 0x100B;
+    const EINSUFFICIENT_VEKEPL_BALANCE              :u64 = 0x100C;
+    const EINSUFFICIENT_KEPL_BALANCE                :u64 = 0x100D;
+    const ENOT_BUYER                                :u64 = 0x100E;
+    const EFEE_WALLET_NOT_REGISTERED_FOR_CURRENCY   :u64 = 0x1010;
+    const EREFERRER_NOT_REGISTERED_FOR_CURRENCY     :u64 = 0x1011;
+    const ECLAIM_FORBIDDEN_BEFORE_CLAIM_STARTED     :u64 = 0x1012;
+
 
     public entry fun initialize<Currency,VeKEPL,KEPL>(
         deployer:&signer,
@@ -86,8 +106,17 @@ module kepler::presale_007 {
         assert!(addr==@kepler, ENOT_DEPLOYER);
         assert!(!exists<ModuleStorage>(addr), EALREADY_INITIALIZED);
         let (resource_signer, signer_capability) = account::create_resource_account(deployer, seed);
-        managed_coin::register<VeKEPL>(&resource_signer);
-        managed_coin::register<KEPL>(&resource_signer);
+        let resource_addr = signer::address_of(&resource_signer); 
+        if(!coin::is_account_registered<Currency>(resource_addr)){
+            managed_coin::register<Currency>(&resource_signer);
+        };
+        if(!coin::is_account_registered<VeKEPL>(resource_addr)){
+            managed_coin::register<VeKEPL>(&resource_signer);
+        };
+        if(!coin::is_account_registered<KEPL>(resource_addr)){
+            managed_coin::register<KEPL>(&resource_signer);
+        };
+
         move_to(deployer, ModuleStorage{
             base_price,
             claim_start_time,
@@ -104,6 +133,7 @@ module kepler::presale_007 {
             round_prices: calculate_round_prices(base_price),
             saled_amount: 0,
             signer_capability,
+            buy_events: account::new_event_handle<BuyEvent>(&resource_signer),
         });
     }
 
@@ -158,17 +188,39 @@ module kepler::presale_007 {
         assert!(type_info::type_of<VeKEPL>() == global.vekepl, EINVLAID_VEKEPL);
         let vekepl_amount = get_buyable_vekepl_amount(global,payment);
         let referrer_reward = 0;
+        let record = BuyRecord{
+            buyer: buyer_addr,
+            payment,
+            vekepl_amount,
+            referrer,
+            referrer_reward,
+            buy_time: now,
+            lock_periods,
+        };
+
+        event::emit_event<BuyEvent>(&mut global.buy_events, BuyEvent {
+            buyer: buyer_addr,
+            payment,
+            vekepl_amount,
+            referrer,
+            referrer_reward,
+            buy_time: now,
+            lock_periods,
+        });
         if(referrer!=EMPTY_ADDRESS){
-            if(exists<UserStorage>(referrer)){
-                let referrer_storage = borrow_global<UserStorage>(referrer);
-                if(referrer_storage.total_payments >= global.refeerer_min_buy_amount){
-                    referrer_reward = payment * global.commission_rate/100;
-                }
+            assert!(exists<UserStorage>(referrer),EINVALID_REFERRER);
+            let referrer_storage = borrow_global_mut<UserStorage>(referrer);
+            if(referrer_storage.total_payments >= global.refeerer_min_buy_amount){
+                referrer_reward = payment * global.commission_rate/100;
+                number_set(&mut record.referrer_reward,referrer_reward);
+                vector::push_back(&mut referrer_storage.reference_records,record);
             }
         };
+
         if(!exists<UserStorage>(buyer_addr)){
             move_to(buyer, UserStorage{
                 buy_records: vector::empty(),
+                reference_records: vector::empty(),
                 claim_records: vector::empty(),
                 claimed_count: 0 ,
                 total_payments: 0,
@@ -178,33 +230,35 @@ module kepler::presale_007 {
 
         let user_storage = borrow_global_mut<UserStorage>(buyer_addr);
         number_add(&mut global.saled_amount,payment);
-        vector::push_back(&mut user_storage.buy_records,BuyRecord{
-            payment,
-            vekepl_amount,
-            referrer,
-            referrer_reward,
-            buy_time: now,
-            lock_periods,
-        });
+        number_add(&mut user_storage.total_payments,payment);
+        vector::push_back(&mut user_storage.buy_records,record);
 
         if(user_storage.max_claim_count< lock_periods) {
             number_set(&mut user_storage.max_claim_count,lock_periods);
         };
 
+        assert!(coin::is_account_registered<Currency>(global.fee_wallet),EFEE_WALLET_NOT_REGISTERED_FOR_CURRENCY);
         coin::transfer<Currency>(buyer,global.fee_wallet,payment-referrer_reward);
         if(referrer_reward > 0 ){
+            assert!(coin::is_account_registered<Currency>(referrer),EREFERRER_NOT_REGISTERED_FOR_CURRENCY);
             coin::transfer<Currency>(buyer,referrer, referrer_reward);
         };
+
         let resource_signer = account::create_signer_with_capability(&global.signer_capability);
         let resource_addr = signer::address_of(&resource_signer);
         assert!(coin::balance<VeKEPL>(resource_addr) >= vekepl_amount, EINSUFFICIENT_VEKEPL_BALANCE);
+
+        if(!coin::is_account_registered<VeKEPL>(buyer_addr)){
+            managed_coin::register<VeKEPL>(buyer);
+        };
         coin::transfer<VeKEPL>(&resource_signer, buyer_addr, vekepl_amount);
     }
 
-    public entry fun claim_kepl< VeKEPL,KEPL>(buyer:&signer ) acquires ModuleStorage, UserStorage {
+    public entry fun claim_kepl< VeKEPL,KEPL>(buyer:&signer) acquires ModuleStorage, UserStorage {
         let buyer_addr = signer::address_of(buyer);
         assert!(exists<ModuleStorage>(@kepler), ENOT_INITIALIZED);
         let global = borrow_global_mut<ModuleStorage>(@kepler);
+        assert!(timestamp::now_seconds() > global.claim_start_time,ECLAIM_FORBIDDEN_BEFORE_CLAIM_STARTED);
         assert!(type_info::type_of<VeKEPL>() == global.vekepl, EINVLAID_VEKEPL);
         assert!(type_info::type_of<KEPL>() == global.kepl, EINVLAID_KEPL);
         assert!(exists<UserStorage>(buyer_addr),ENOT_BUYER);
@@ -274,31 +328,31 @@ module kepler::presale_007 {
     }
 
     fun get_buyable_vekepl_amount(global: &ModuleStorage, payment: u64): u64 {
-        let saled_amount = global.saled_amount;
-        let sale_amount_per_round = global.sale_amount_per_round;
+        let saled_amount = (global.saled_amount as u128);
+        let payment = (payment as u128);
+        let sale_amount_per_round = (global.sale_amount_per_round as u128);
         let round = saled_amount / sale_amount_per_round;
-        let vekepl_amount = 0 ;
-        let round_prices = global.round_prices;
+        let vekepl_amount = 0u128 ;
+        let round_prices = global.round_prices ;
         let length = vector::length(& round_prices);
-        let i = round;
-        let multiplier = 10000000;
+        let i = (round as u64);
         while(i < length) {
-            let price = * vector::borrow(&round_prices,i);
-            let round_max_amount = (i + 1) * sale_amount_per_round;
+            let price =( (* vector::borrow(&round_prices,i)) as u128);
+            let round_max_amount = (((i + 1) as u128) * sale_amount_per_round as u128);
             if (saled_amount + payment > round_max_amount) {
                 // exceed current round
                 let amount = round_max_amount - saled_amount;
-                vekepl_amount = vekepl_amount + amount * multiplier / price;
+                vekepl_amount = vekepl_amount + amount * UNIT / price;
                 payment = payment -  amount;
                 saled_amount = saled_amount +  amount;
             } else {
-                vekepl_amount = vekepl_amount+ payment * multiplier / price;
+                vekepl_amount = vekepl_amount + payment * UNIT / price;
                 break
             };
             i = i + 1;
         };
 
-        vekepl_amount/multiplier
+        (vekepl_amount as u64)
     }
 
     fun calculate_round_prices(base_price: u64): vector<u64> {

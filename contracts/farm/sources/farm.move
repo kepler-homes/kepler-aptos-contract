@@ -30,7 +30,7 @@ module kepler::farm_003{
     const ESTAKE_POOL_NOT_FOUND     :u64 = 1018;
     const ENOTHING_TO_CLAIM         :u64 = 1019;
 
-    const UNIT: u64 = 1000000;
+    const UNIT: u64 = 100000000;
 
     struct ResourceAccount has key {
         signer_capability: account::SignerCapability

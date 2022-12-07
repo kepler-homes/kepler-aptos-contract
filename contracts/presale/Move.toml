@@ -1,11 +1,11 @@
 [package]
-name = "presale_007"
+name = "presale"
 version = "0.0.1"
 
 [addresses]
 aptos_framework = "0x1"
 aptos_std = "0x1"
-kepler = "_"
+kepler = "9a0941b276f496cfa374e433c56e646182fb667578a38feafebfe497ddbbb8e1"
 std = "0x1"
 
 [dependencies]

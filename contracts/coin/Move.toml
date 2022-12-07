@@ -6,4 +6,4 @@ version = "0.0.1"
 AptosFramework = {git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework/", rev = "devnet"}
 
 [addresses]
-kepler = "_"
+coin = "c643abcec4cedeba16538a59ec5a99700d32bc7da6e9e407b38d5774ee2e9125"
